@@ -1,0 +1,8 @@
+*.db
+*.pyc
+__pycache__/
+*.spec
+build/
+dist/
+*.bat
+.env
