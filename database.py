@@ -95,17 +95,17 @@ class Database:
 
     def get_all_users(self):
         with get_conn() as c:
-            return [row(r) for r in c.execute('SELECT * FROM users ORDER BY role, name').fetchall()]
+            return [row(r) for r in c.execute('SELECT * FROM users ORDER BY id').fetchall()]
 
     def get_users_by_hospital(self, hospital):
         with get_conn() as c:
             return [row(r) for r in c.execute(
-                'SELECT * FROM users WHERE hospital=? ORDER BY role, name', (hospital,)).fetchall()]
+                'SELECT * FROM users WHERE hospital=? ORDER BY id', (hospital,)).fetchall()]
 
     def get_users_by_dept(self, hospital, dept):
         with get_conn() as c:
             return [row(r) for r in c.execute(
-                'SELECT * FROM users WHERE hospital=? AND dept=? ORDER BY role, name',
+                'SELECT * FROM users WHERE hospital=? AND dept=? ORDER BY id',
                 (hospital, dept)).fetchall()]
 
     def get_available_surgeons(self, specialty):
@@ -165,24 +165,24 @@ class Database:
     def get_all_requests(self):
         with get_conn() as c:
             return [row(r) for r in c.execute(
-                'SELECT * FROM requests ORDER BY created_at DESC').fetchall()]
+                'SELECT * FROM requests ORDER BY id DESC').fetchall()]
 
     def get_requests_by_hospital(self, hospital):
         with get_conn() as c:
             return [row(r) for r in c.execute(
-                'SELECT * FROM requests WHERE hospital=? ORDER BY created_at DESC',
+                'SELECT * FROM requests WHERE hospital=? ORDER BY id DESC',
                 (hospital,)).fetchall()]
 
     def get_requests_by_dept(self, hospital, dept):
         with get_conn() as c:
             return [row(r) for r in c.execute(
-                'SELECT * FROM requests WHERE hospital=? AND dept=? ORDER BY created_at DESC',
+                'SELECT * FROM requests WHERE hospital=? AND dept=? ORDER BY id DESC',
                 (hospital, dept)).fetchall()]
 
     def get_open_requests(self, specialty):
         with get_conn() as c:
             return [row(r) for r in c.execute(
-                'SELECT * FROM requests WHERE status="searching" AND specialty=? ORDER BY created_at DESC',
+                'SELECT * FROM requests WHERE status="searching" AND specialty=? ORDER BY id DESC',
                 (specialty,)).fetchall()]
 
     def create_request(self, hospital, dept, requested_by, specialty, urgency, patient):
