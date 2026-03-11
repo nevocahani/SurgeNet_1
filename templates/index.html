@@ -829,6 +829,41 @@ async function pgSysUsers(el) {
   users.forEach(function(u){ if(!byRole[u.role]) byRole[u.role]=[]; byRole[u.role].push(u); });
   var order = ['admin','hospital_ceo','dept_head','surgeon','dept_staff'];
   el.innerHTML = '<div class="page-header"><div class="page-title">ניהול משתמשים</div></div>';
+
+  // Add new user form
+  var addCard = document.createElement('div');
+  addCard.className = 'card';
+  addCard.style.marginBottom = '20px';
+  addCard.innerHTML =
+    '<div class="card-title">➕ הוספת משתמש חדש</div>'+
+    '<div class="form-grid" style="margin-bottom:14px">'+
+      '<div class="form-field"><label>שם משתמש *</label><input id="au-username" placeholder="לדוגמה: ceo_ichilov"></div>'+
+      '<div class="form-field"><label>שם מלא *</label><input id="au-name" placeholder="שם הרופא / המנהל"></div>'+
+      '<div class="form-field"><label>תפקיד *</label><select id="au-role">'+
+        '<option value="hospital_ceo">🏛️ ראש בית חולים</option>'+
+        '<option value="dept_head">🏥 ראש מחלקה</option>'+
+        '<option value="surgeon">🩺 מנתח</option>'+
+        '<option value="dept_staff">🏨 צוות משותף</option>'+
+        '<option value="admin">👑 מנהל מערכת</option>'+
+      '</select></div>'+
+      '<div class="form-field"><label>בית חולים</label><select id="au-hospital">'+
+        '<option value="">בחר...</option>'+
+        '<option>איכילוב</option><option>שיבא</option><option>הדסה עין כרם</option>'+
+        '<option>הדסה הר הצופים</option><option>רמב"ם</option><option>וולפסון</option>'+
+        '<option>סורוקה</option><option>שערי צדק</option><option>בני ציון</option><option>זיו</option>'+
+      '</select></div>'+
+      '<div class="form-field"><label>מחלקה</label><input id="au-dept" placeholder="לדוגמה: נוירוכירורגיה"></div>'+
+      '<div class="form-field"><label>התמחות (מנתחים בלבד)</label><select id="au-spec">'+
+        '<option value="">—</option>'+
+        '<option>נוירוכירורגיה</option><option>קרדיולוגיה</option><option>טראומה</option>'+
+        '<option>כירורגיה כללית</option><option>אורתופדיה</option>'+
+      '</select></div>'+
+    '</div>'+
+    '<button class="btn-submit" style="max-width:200px" onclick="adminAddUser()">+ הוסף משתמש</button>'+
+    '<div style="font-size:11px;color:var(--muted);margin-top:8px">המשתמש יגדיר סיסמה בכניסה הראשונה</div>';
+  el.appendChild(addCard);
+
+  // Users list by role
   order.forEach(function(role){
     var list = byRole[role]||[];
     if(!list.length) return;
@@ -848,6 +883,25 @@ async function pgSysUsers(el) {
       '</tbody></table></div>';
     el.appendChild(div);
   });
+}
+
+async function adminAddUser() {
+  var username = (document.getElementById('au-username')||{}).value||'';
+  var name     = (document.getElementById('au-name')||{}).value||'';
+  var role     = (document.getElementById('au-role')||{}).value||'';
+  var hospital = (document.getElementById('au-hospital')||{}).value||'';
+  var dept     = (document.getElementById('au-dept')||{}).value||'';
+  var spec     = (document.getElementById('au-spec')||{}).value||'';
+  if(!username.trim()||!name.trim()){ showToast('יש למלא שם משתמש ושם מלא','err'); return; }
+  try {
+    await api('POST', '/users', {
+      username: username.trim(), name: name.trim(), role,
+      hospital: hospital||null, dept: dept||null,
+      specialty: spec||null
+    });
+    showToast('✅ המשתמש נוסף בהצלחה','ok');
+    pgSysUsers(document.getElementById('page-sys_users'));
+  } catch(e) { showToast(e.message,'err'); }
 }
 
 // ── build req card ─────────────────────────────────────────────────
