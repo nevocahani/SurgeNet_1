@@ -124,7 +124,7 @@ class Database:
         }
         color, emoji = role_config.get(role, ('#888', '👤'))
         with get_conn() as c:
-            c.execute('''INSERT INTO users
+            cur = c.execute('''INSERT INTO users
                 (username, name, role, hospital, dept, color, emoji,
                  specialty, can_travel, transport, available, lat, lng, is_shared, first_login)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)''',
@@ -132,7 +132,7 @@ class Database:
                  kwargs.get('specialty'), int(kwargs.get('can_travel', False)),
                  kwargs.get('transport'), int(kwargs.get('can_travel', False)),
                  kwargs.get('lat'), kwargs.get('lng'), int(kwargs.get('is_shared', False))))
-            uid = c.lastrowid
+            uid = cur.lastrowid
         return self.get_user(uid)
 
     def set_password(self, username, password_hash):
@@ -187,12 +187,12 @@ class Database:
 
     def create_request(self, hospital, dept, requested_by, specialty, urgency, patient):
         with get_conn() as c:
-            c.execute('''INSERT INTO requests
+            cur = c.execute('''INSERT INTO requests
                 (hospital, dept, requested_by, specialty, urgency, patient, status)
                 VALUES (?,?,?,?,?,?,?)''',
                 (hospital, dept, requested_by, specialty, urgency,
                  json.dumps(patient, ensure_ascii=False), 'searching'))
-            rid = c.lastrowid
+            rid = cur.lastrowid
         return self.get_request(rid)
 
     def match_request(self, rid, surgeon_id, eta_minutes, dist_km):
