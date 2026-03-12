@@ -762,7 +762,7 @@ async function pgCeoDash(el) {
 
 async function pgCeoUsers(el) {
   var users = await api('GET', '/users');
-  var deptHeads = users.filter(function(u){ return u.role==='dept_head'&&u.hospital===CU.hospital; });
+  var deptHeads = users.filter(function(u){ return (u.role==='dept_head'||u.role==='surgeon'||u.role==='dept_staff')&&u.hospital===CU.hospital; });
   el.innerHTML = '<div class="page-header"><div class="page-title">ניהול ראשי מחלקות</div><div class="page-sub">'+CU.hospital+'</div></div>'+
   '<div class="card">'+
     '<div class="card-title">🏥 ראשי מחלקות ('+deptHeads.length+')</div>'+
@@ -825,9 +825,6 @@ async function pgAllReq(el) {
 
 async function pgSysUsers(el) {
   var users = await api('GET', '/users');
-  var byRole = {};
-  users.forEach(function(u){ if(!byRole[u.role]) byRole[u.role]=[]; byRole[u.role].push(u); });
-  var order = ['admin','hospital_ceo','dept_head','surgeon','dept_staff'];
   el.innerHTML = '<div class="page-header"><div class="page-title">ניהול משתמשים</div></div>';
 
   // Add new user form
@@ -863,25 +860,48 @@ async function pgSysUsers(el) {
     '<div style="font-size:11px;color:var(--muted);margin-top:8px">המשתמש יגדיר סיסמה בכניסה הראשונה</div>';
   el.appendChild(addCard);
 
-  // Users list by role
-  order.forEach(function(role){
-    var list = byRole[role]||[];
-    if(!list.length) return;
-    var div=document.createElement('div');
-    div.className='card'; div.style.marginBottom='14px';
-    div.innerHTML='<div class="card-title">'+(list[0].emoji||'👤')+' '+ROLE_LABELS[role]+' ('+list.length+')</div>'+
-      '<div class="table-wrap"><table><thead><tr><th>שם</th><th>בית חולים</th><th>מחלקה</th><th>סטטוס</th><th></th></tr></thead><tbody>'+
-      list.map(function(u){
-        return '<tr>'+
-          '<td><strong>'+u.name+'</strong><div style="font-size:11px;color:var(--muted);font-family:var(--mono)">'+u.username+'</div></td>'+
-          '<td>'+(u.hospital||'—')+'</td>'+
-          '<td>'+(u.dept||'—')+'</td>'+
-          '<td><span class="badge '+(u.first_login?'badge-yellow':'badge-green')+'">'+(u.first_login?'ממתין':'פעיל')+'</span></td>'+
-          '<td><button class="btn-sm red" onclick="deleteUser('+u.id+')">הסר</button></td>'+
-        '</tr>';
-      }).join('')+
-      '</tbody></table></div>';
-    el.appendChild(div);
+  // Group by hospital, then by role inside
+  var byHospital = {};
+  users.forEach(function(u){
+    var h = u.hospital || '— ללא בית חולים —';
+    if(!byHospital[h]) byHospital[h] = [];
+    byHospital[h].push(u);
+  });
+
+  var roleOrder = ['admin','hospital_ceo','dept_head','surgeon','dept_staff'];
+  Object.keys(byHospital).sort().forEach(function(hosp){
+    var hospUsers = byHospital[hosp];
+    var hospCard = document.createElement('div');
+    hospCard.className = 'card';
+    hospCard.style.marginBottom = '16px';
+
+    // Group by role inside this hospital
+    var byRole = {};
+    hospUsers.forEach(function(u){ if(!byRole[u.role]) byRole[u.role]=[]; byRole[u.role].push(u); });
+
+    var rolesHtml = roleOrder.map(function(role){
+      var list = byRole[role]||[];
+      if(!list.length) return '';
+      return '<div style="margin-bottom:12px">'+
+        '<div class="section-label" style="margin-bottom:8px">'+(list[0].emoji||'👤')+' '+ROLE_LABELS[role]+' ('+list.length+')</div>'+
+        list.map(function(u){
+          return '<div class="user-card">'+
+            '<div class="user-avatar-lg" style="background:'+(u.color||'#888')+'">'+u.emoji+'</div>'+
+            '<div class="user-card-info">'+
+              '<div class="user-card-name">'+u.name+'</div>'+
+              '<div class="user-card-sub" style="font-family:var(--mono);font-size:10px">'+u.username+(u.dept?' · '+u.dept:'')+'</div>'+
+              '<div class="user-card-sub" style="margin-top:3px"><span class="badge '+(u.first_login?'badge-yellow':'badge-green')+'">'+(u.first_login?'⏳ ממתין לכניסה':'✓ פעיל')+'</span></div>'+
+            '</div>'+
+            '<div class="user-card-actions">'+
+              '<div class="icon-btn del" onclick="deleteUser('+u.id+')" title="הסר">🗑</div>'+
+            '</div>'+
+          '</div>';
+        }).join('')+
+      '</div>';
+    }).join('');
+
+    hospCard.innerHTML = '<div class="card-title">🏥 '+hosp+' ('+hospUsers.length+' משתמשים)</div>' + rolesHtml;
+    el.appendChild(hospCard);
   });
 }
 
