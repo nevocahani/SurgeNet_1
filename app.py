@@ -75,6 +75,19 @@ def me():
         return jsonify({'logged_in': False})
     return jsonify({'logged_in': True, 'user': safe_user(user)})
 
+@app.route('/api/change-password', methods=['POST'])
+@login_required()
+def change_password(current_user):
+    data = request.json
+    old_pw  = data.get('old_password', '')
+    new_pw  = data.get('new_password', '')
+    if current_user['password_hash'] != hash_password(old_pw):
+        return jsonify({'error': 'הסיסמה הנוכחית שגויה'}), 400
+    if len(new_pw) < 6:
+        return jsonify({'error': 'הסיסמה חייבת להכיל לפחות 6 תווים'}), 400
+    db.set_password(current_user['username'], hash_password(new_pw))
+    return jsonify({'ok': True})
+
 # ── users management ─────────────────────────────────────────────
 @app.route('/api/users', methods=['GET'])
 @login_required(roles=['admin', 'hospital_ceo', 'dept_head'])
