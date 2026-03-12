@@ -781,6 +781,248 @@ function showMsg(el, text, type) {
 }
 
 
+
+// ── dept head: my requests ────────────────────────────────────────
+async function pgMyReq(el) {
+  await loadRequests();
+  var mine = requests.filter(function(r){ return r.hospital===CU.hospital&&r.dept===CU.dept; });
+  el.innerHTML = '<div class="page-header"><div class="page-title">בקשות המחלקה</div><div class="page-sub">'+CU.dept+' · '+CU.hospital+'</div></div>';
+  if(!mine.length){ el.innerHTML+='<div class="empty"><div class="empty-icon">📋</div><div>אין בקשות</div></div>'; return; }
+  mine.forEach(function(r){ el.appendChild(buildReqCard(r,false,false)); });
+}
+
+async function pgStaffReq(el) { return pgMyReq(el); }
+
+// ── dept head: surgeons ───────────────────────────────────────────
+async function pgDeptSurgeons(el) {
+  var users = await api('GET', '/users');
+  var surgeons = users.filter(function(u){ return u.role==='surgeon'&&u.hospital===CU.hospital&&u.dept===CU.dept; });
+  el.innerHTML = '<div class="page-header"><div class="page-title">המנתחים שלי</div><div class="page-sub">'+CU.dept+' · '+CU.hospital+'</div></div>'+
+  '<div class="card">'+
+    '<div class="card-title">🩺 מנתחים ('+surgeons.length+')</div>'+
+    surgeons.map(function(s){
+      return '<div class="user-card">'+
+        '<div class="user-avatar-lg" style="background:'+s.color+'">'+s.emoji+'</div>'+
+        '<div class="user-card-info"><div class="user-card-name">'+s.name+'</div>'+
+        '<div class="user-card-sub" style="display:flex;gap:6px;margin-top:4px">'+
+          '<span class="'+(s.can_travel?'t-yes':'t-no')+'">'+(s.can_travel?'✓ '+s.transport:'✗ לא זמין')+'</span>'+
+          (s.available?'<span class="badge badge-green">זמין</span>':'<span class="badge badge-gray">לא זמין</span>')+
+        '</div></div>'+
+        '<div class="user-card-actions"><div class="icon-btn del" onclick="deleteUser('+s.id+')" title="הסר">🗑</div></div>'+
+      '</div>';
+    }).join('')+
+    (surgeons.length===0?'<div class="empty" style="padding:24px"><div>אין מנתחים עדיין</div></div>':'')+
+    '<div class="add-form">'+
+      '<div class="section-label">הוספת מנתח</div>'+
+      '<div class="form-grid" style="margin-bottom:12px">'+
+        '<div class="form-field"><label>שם משתמש *</label><input id="ns-uid" placeholder="לדוגמה: dr_cohen"></div>'+
+        '<div class="form-field"><label>שם מלא *</label><input id="ns-name" placeholder="שם הרופא"></div>'+
+        '<div class="form-field"><label>התמחות</label><select id="ns-spec"><option>נוירוכירורגיה</option><option>קרדיולוגיה</option><option>טראומה</option><option>כירורגיה כללית</option><option>אורתופדיה</option></select></div>'+
+        '<div class="form-field"><label>יכולת נסיעה</label><select id="ns-travel"><option value="yes">יש — רכב פרטי</option><option value="hosp">יש — הסעה</option><option value="no">אין</option></select></div>'+
+      '</div>'+
+      '<button class="btn-sm green" onclick="addSurgeon()">+ הוסף מנתח</button>'+
+      '<div style="font-size:11px;color:var(--muted);margin-top:8px">המנתח יגדיר סיסמה בכניסה הראשונה</div>'+
+    '</div>'+
+  '</div>';
+}
+
+async function addSurgeon() {
+  var uid  = (document.getElementById('ns-uid')||{}).value||'';
+  var name = (document.getElementById('ns-name')||{}).value||'';
+  var spec = (document.getElementById('ns-spec')||{}).value||'';
+  var t    = (document.getElementById('ns-travel')||{}).value||'';
+  if(!uid.trim()||!name.trim()){ showToast('יש למלא שם משתמש ושם','err'); return; }
+  var canT = t!=='no';
+  var trans = t==='yes'?'רכב פרטי':t==='hosp'?'הסעה מבית החולים':null;
+  try {
+    await api('POST', '/users', { username:uid.trim(), name:name.trim(), role:'surgeon', hospital:CU.hospital, dept:CU.dept, specialty:spec, can_travel:canT, transport:trans });
+    showToast('✅ המנתח נוסף','ok');
+    pgDeptSurgeons(document.getElementById('page-dept_surgeons'));
+  } catch(e) { showToast(e.message,'err'); }
+}
+
+async function deleteUser(uid) {
+  try {
+    await api('DELETE', '/users/'+uid);
+    showToast('🗑 הוסר','');
+    renderPage(currentPage);
+  } catch(e) { showToast(e.message,'err'); }
+}
+
+// ── CEO ───────────────────────────────────────────────────────────
+async function pgCeoDash(el) {
+  await loadRequests();
+  var mine = requests.filter(function(r){ return r.hospital===CU.hospital; });
+  var active  = mine.filter(function(r){ return r.status==='searching'; }).length;
+  var matched = mine.filter(function(r){ return r.status==='matched'; }).length;
+  el.innerHTML = '<div class="page-header"><div class="page-title">סקירת '+CU.hospital+'</div></div>'+
+  '<div class="stats-row" style="grid-template-columns:repeat(3,1fr)">'+
+    '<div class="stat-card"><div class="stat-num" style="color:var(--red)">'+active+'</div><div class="stat-lbl">בקשות פעילות</div></div>'+
+    '<div class="stat-card"><div class="stat-num" style="color:var(--green)">'+matched+'</div><div class="stat-lbl">הותאמו</div></div>'+
+    '<div class="stat-card"><div class="stat-num">'+mine.length+'</div><div class="stat-lbl">סה"כ</div></div>'+
+  '</div>'+
+  '<div class="card" id="ceo-req-list"><div class="section-label">בקשות אחרונות</div></div>';
+  var card=document.getElementById('ceo-req-list');
+  if(!mine.length){ card.innerHTML+='<div class="empty" style="padding:24px"><div>אין בקשות</div></div>'; return; }
+  mine.slice(0,5).forEach(function(r){ card.appendChild(buildReqCard(r,false,false)); });
+}
+
+async function pgCeoUsers(el) {
+  var users = await api('GET', '/users');
+  var hospUsers = users.filter(function(u){ return (u.role==='dept_head'||u.role==='surgeon'||u.role==='dept_staff')&&u.hospital===CU.hospital; });
+  var byRole = {};
+  hospUsers.forEach(function(u){ if(!byRole[u.role]) byRole[u.role]=[]; byRole[u.role].push(u); });
+
+  el.innerHTML = '<div class="page-header"><div class="page-title">ניהול מחלקות</div><div class="page-sub">'+CU.hospital+'</div></div>'+
+  '<div class="card" style="margin-bottom:14px">'+
+    '<div class="card-title">הוספת ראש מחלקה</div>'+
+    '<div class="form-grid" style="margin-bottom:12px">'+
+      '<div class="form-field"><label>שם משתמש *</label><input id="nd-uid" placeholder="לדוגמה: dept_neuro"></div>'+
+      '<div class="form-field"><label>שם מלא *</label><input id="nd-name" placeholder="שם הרופא"></div>'+
+      '<div class="form-field" style="grid-column:span 2"><label>שם המחלקה *</label><input id="nd-dept" placeholder="לדוגמה: נוירוכירורגיה"></div>'+
+    '</div>'+
+    '<button class="btn-sm" style="background:var(--blue);color:white;border-color:var(--blue)" onclick="addDeptHead()">+ הוסף ראש מחלקה</button>'+
+    '<div style="font-size:11px;color:var(--muted);margin-top:8px">יגדיר סיסמה בכניסה הראשונה</div>'+
+  '</div>';
+
+  ['dept_head','surgeon','dept_staff'].forEach(function(role){
+    var list = byRole[role]||[];
+    if(!list.length) return;
+    var div = document.createElement('div');
+    div.className='card'; div.style.marginBottom='14px';
+    div.innerHTML='<div class="card-title">'+(list[0].emoji||'👤')+' '+ROLE_LABELS[role]+' ('+list.length+')</div>'+
+      list.map(function(u){
+        return '<div class="user-card">'+
+          '<div class="user-avatar-lg" style="background:'+u.color+'">'+u.emoji+'</div>'+
+          '<div class="user-card-info"><div class="user-card-name">'+u.name+'</div><div class="user-card-sub">'+u.dept+'</div></div>'+
+          '<div class="user-card-actions"><div class="icon-btn del" onclick="deleteUser('+u.id+')" title="הסר">🗑</div></div>'+
+        '</div>';
+      }).join('');
+    el.appendChild(div);
+  });
+}
+
+async function addDeptHead() {
+  var uid  = (document.getElementById('nd-uid') ||{}).value||'';
+  var name = (document.getElementById('nd-name')||{}).value||'';
+  var dept = (document.getElementById('nd-dept')||{}).value||'';
+  if(!uid.trim()||!name.trim()||!dept.trim()){ showToast('יש למלא את כל השדות','err'); return; }
+  try {
+    await api('POST', '/users', { username:uid.trim(), name:name.trim(), role:'dept_head', hospital:CU.hospital, dept:dept.trim() });
+    showToast('✅ ראש המחלקה נוסף','ok');
+    pgCeoUsers(document.getElementById('page-ceo_users'));
+  } catch(e) { showToast(e.message,'err'); }
+}
+
+// ── admin ─────────────────────────────────────────────────────────
+async function pgAdminDash(el) {
+  await loadRequests();
+  var active = requests.filter(function(r){ return r.status==='searching'; }).length;
+  el.innerHTML = '<div class="page-header"><div class="page-title">מרכז בקרה</div></div>'+
+  '<div class="stats-row">'+
+    '<div class="stat-card"><div class="stat-num" style="color:var(--red)">'+active+'</div><div class="stat-lbl">בקשות פעילות</div></div>'+
+    '<div class="stat-card"><div class="stat-num" style="color:var(--green)">'+requests.filter(function(r){return r.status==='matched';}).length+'</div><div class="stat-lbl">הותאמו</div></div>'+
+    '<div class="stat-card"><div class="stat-num">'+requests.length+'</div><div class="stat-lbl">סה"כ בקשות</div></div>'+
+    '<div class="stat-card"><div class="stat-num" id="surgeon-count">—</div><div class="stat-lbl">מנתחים</div></div>'+
+  '</div>';
+  api('GET','/users').then(function(users){
+    var el2=document.getElementById('surgeon-count');
+    if(el2) el2.textContent=users.filter(function(u){return u.role==='surgeon';}).length;
+  });
+}
+
+async function pgAllReq(el) {
+  await loadRequests();
+  el.innerHTML = '<div class="page-header"><div class="page-title">כל הבקשות</div></div>';
+  if(!requests.length){ el.innerHTML+='<div class="empty"><div class="empty-icon">📋</div><div>אין בקשות</div></div>'; return; }
+  requests.forEach(function(r){ el.appendChild(buildReqCard(r,true,false)); });
+}
+
+async function pgSysUsers(el) {
+  var users = await api('GET', '/users');
+  el.innerHTML = '<div class="page-header"><div class="page-title">ניהול משתמשים</div></div>';
+
+  // add user form
+  var addCard = document.createElement('div');
+  addCard.className='card'; addCard.style.marginBottom='16px';
+  addCard.innerHTML='<div class="card-title">➕ הוספת משתמש חדש</div>'+
+    '<div class="form-grid" style="margin-bottom:12px">'+
+      '<div class="form-field"><label>שם משתמש *</label><input id="au-username" placeholder="לדוגמה: ceo_ichilov"></div>'+
+      '<div class="form-field"><label>שם מלא *</label><input id="au-name" placeholder="שם הרופא / המנהל"></div>'+
+      '<div class="form-field"><label>תפקיד *</label><select id="au-role">'+
+        '<option value="hospital_ceo">🏛️ ראש בית חולים</option>'+
+        '<option value="dept_head">🏥 ראש מחלקה</option>'+
+        '<option value="surgeon">🩺 מנתח</option>'+
+        '<option value="dept_staff">🏨 צוות משותף</option>'+
+        '<option value="admin">👑 מנהל מערכת</option>'+
+      '</select></div>'+
+      '<div class="form-field"><label>בית חולים</label><select id="au-hospital">'+
+        '<option value="">בחר...</option>'+
+        '<option>איכילוב</option><option>שיבא</option><option>הדסה עין כרם</option>'+
+        '<option>הדסה הר הצופים</option><option>רמב"ם</option><option>וולפסון</option>'+
+        '<option>סורוקה</option><option>שערי צדק</option><option>בני ציון</option><option>זיו</option>'+
+      '</select></div>'+
+      '<div class="form-field"><label>מחלקה</label><input id="au-dept" placeholder="לדוגמה: נוירוכירורגיה"></div>'+
+      '<div class="form-field"><label>התמחות</label><select id="au-spec">'+
+        '<option value="">—</option>'+
+        '<option>נוירוכירורגיה</option><option>קרדיולוגיה</option><option>טראומה</option>'+
+        '<option>כירורגיה כללית</option><option>אורתופדיה</option>'+
+      '</select></div>'+
+    '</div>'+
+    '<button class="btn-submit" style="max-width:200px" onclick="adminAddUser()">+ הוסף משתמש</button>'+
+    '<div style="font-size:11px;color:var(--muted);margin-top:8px">המשתמש יגדיר סיסמה בכניסה הראשונה</div>';
+  el.appendChild(addCard);
+
+  // group by hospital then role
+  var byHospital = {};
+  users.forEach(function(u){
+    var h = u.hospital || '— ללא בית חולים —';
+    if(!byHospital[h]) byHospital[h]=[];
+    byHospital[h].push(u);
+  });
+  var roleOrder = ['admin','hospital_ceo','dept_head','surgeon','dept_staff'];
+  Object.keys(byHospital).sort().forEach(function(hosp){
+    var hospUsers = byHospital[hosp];
+    var byRole = {};
+    hospUsers.forEach(function(u){ if(!byRole[u.role]) byRole[u.role]=[]; byRole[u.role].push(u); });
+    var card = document.createElement('div');
+    card.className='card'; card.style.marginBottom='14px';
+    var rolesHtml = roleOrder.map(function(role){
+      var list=byRole[role]||[]; if(!list.length) return '';
+      return '<div style="margin-bottom:12px">'+
+        '<div class="section-label" style="margin-bottom:8px">'+(list[0].emoji||'👤')+' '+ROLE_LABELS[role]+' ('+list.length+')</div>'+
+        list.map(function(u){
+          return '<div class="user-card">'+
+            '<div class="user-avatar-lg" style="background:'+u.color+'">'+u.emoji+'</div>'+
+            '<div class="user-card-info"><div class="user-card-name">'+u.name+'</div>'+
+              '<div class="user-card-sub" style="font-family:var(--mono);font-size:10px">'+u.username+(u.dept?' · '+u.dept:'')+'</div>'+
+              '<div class="user-card-sub" style="margin-top:3px"><span class="badge '+(u.first_login?'badge-yellow':'badge-green')+'">'+(u.first_login?'⏳ ממתין':'✓ פעיל')+'</span></div>'+
+            '</div>'+
+            '<div class="user-card-actions"><div class="icon-btn del" onclick="deleteUser('+u.id+')" title="הסר">🗑</div></div>'+
+          '</div>';
+        }).join('')+'</div>';
+    }).join('');
+    card.innerHTML='<div class="card-title">🏥 '+hosp+' ('+hospUsers.length+' משתמשים)</div>'+rolesHtml;
+    el.appendChild(card);
+  });
+}
+
+async function adminAddUser() {
+  var username = (document.getElementById('au-username')||{}).value||'';
+  var name     = (document.getElementById('au-name')||{}).value||'';
+  var role     = (document.getElementById('au-role')||{}).value||'';
+  var hospital = (document.getElementById('au-hospital')||{}).value||'';
+  var dept     = (document.getElementById('au-dept')||{}).value||'';
+  var spec     = (document.getElementById('au-spec')||{}).value||'';
+  if(!username.trim()||!name.trim()){ showToast('יש למלא שם משתמש ושם מלא','err'); return; }
+  try {
+    await api('POST', '/users', { username:username.trim(), name:name.trim(), role, hospital:hospital||null, dept:dept||null, specialty:spec||null });
+    showToast('✅ המשתמש נוסף','ok');
+    pgSysUsers(document.getElementById('page-sys_users'));
+  } catch(e) { showToast(e.message,'err'); }
+}
+
+
 // ── build req card ─────────────────────────────────────────────────
 function buildReqCard(r, showPatient, selectable) {
   var div = document.createElement('div');
