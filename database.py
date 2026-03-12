@@ -1,223 +1,337 @@
-import sqlite3, json, os
+import os, json, hashlib
 from datetime import datetime
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'surgenet.db')
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute('PRAGMA journal_mode=WAL')
-    return conn
+    if DATABASE_URL:
+        import psycopg2
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = False
+        return conn
+    else:
+        import sqlite3
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'surgenet.db')
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        return conn
 
-def row(r):
+def is_pg():
+    return bool(DATABASE_URL)
+
+def ph():
+    return '%s' if is_pg() else '?'
+
+def phn(n):
+    s = '%s' if is_pg() else '?'
+    return ','.join([s]*n)
+
+def fetchall(cur):
+    rows = cur.fetchall()
+    if is_pg():
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r)) for r in rows]
+    return [dict(r) for r in rows]
+
+def fetchone(cur):
+    row = cur.fetchone()
+    if row is None:
+        return None
+    if is_pg():
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
+    return dict(row)
+
+def fix(r):
     if r is None:
         return None
     d = dict(r)
-    # parse JSON fields
-    for f in ('patient',):
-        if f in d and isinstance(d[f], str):
-            try: d[f] = json.loads(d[f])
-            except: pass
-    # booleans
-    for f in ('can_travel', 'available', 'first_login', 'is_shared'):
-        if f in d:
-            d[f] = bool(d[f])
+    if 'patient' in d and isinstance(d['patient'], str):
+        try: d['patient'] = json.loads(d['patient'])
+        except: pass
+    for f in ('can_travel','available','first_login','is_shared'):
+        if f in d: d[f] = bool(d[f])
     return d
+
+SCHEMA = [
+    """CREATE TABLE IF NOT EXISTS users (
+        id            {serial} PRIMARY KEY,
+        username      TEXT UNIQUE NOT NULL,
+        name          TEXT NOT NULL,
+        role          TEXT NOT NULL,
+        hospital      TEXT,
+        dept          TEXT,
+        password_hash TEXT,
+        first_login   INTEGER DEFAULT 1,
+        color         TEXT DEFAULT '#4cc9f0',
+        emoji         TEXT DEFAULT '👤',
+        specialty     TEXT,
+        can_travel    INTEGER DEFAULT 0,
+        transport     TEXT,
+        available     INTEGER DEFAULT 0,
+        lat           REAL,
+        lng           REAL,
+        is_shared     INTEGER DEFAULT 0
+    )""",
+    """CREATE TABLE IF NOT EXISTS requests (
+        id            {serial} PRIMARY KEY,
+        hospital      TEXT NOT NULL,
+        dept          TEXT NOT NULL,
+        requested_by  TEXT NOT NULL,
+        specialty     TEXT NOT NULL,
+        urgency       TEXT NOT NULL,
+        status        TEXT DEFAULT 'searching',
+        patient       TEXT,
+        surgeon_id    INTEGER,
+        eta_minutes   INTEGER,
+        dist_km       REAL,
+        traffic_label TEXT,
+        matched_at    TEXT,
+        completed_at  TEXT
+    )""",
+]
 
 class Database:
     def init(self):
-        with get_conn() as c:
-            c.executescript('''
-                CREATE TABLE IF NOT EXISTS users (
-                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username      TEXT UNIQUE NOT NULL,
-                    name          TEXT NOT NULL,
-                    role          TEXT NOT NULL,
-                    hospital      TEXT,
-                    dept          TEXT,
-                    password_hash TEXT,
-                    first_login   INTEGER DEFAULT 1,
-                    color         TEXT DEFAULT "#4cc9f0",
-                    emoji         TEXT DEFAULT "👤",
-                    specialty     TEXT,
-                    can_travel    INTEGER DEFAULT 0,
-                    transport     TEXT,
-                    available     INTEGER DEFAULT 0,
-                    lat           REAL,
-                    lng           REAL,
-                    is_shared     INTEGER DEFAULT 0
-                );
+        serial = 'SERIAL' if is_pg() else 'INTEGER AUTOINCREMENT'
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            for stmt in SCHEMA:
+                cur.execute(stmt.format(serial=serial))
+            conn.commit()
+            p = ph()
+            cur.execute(f'SELECT COUNT(*) FROM users WHERE username={p}', ('admin',))
+            r = cur.fetchone()
+            count = r[0] if isinstance(r, (list,tuple)) else list(dict(r).values())[0]
+            if count == 0:
+                pw = hashlib.sha256('admin123'.encode()).hexdigest()
+                if is_pg():
+                    cur.execute(
+                        'INSERT INTO users (username,name,role,color,emoji,first_login,password_hash) VALUES (%s,%s,%s,%s,%s,%s,%s)',
+                        ('admin','מנהל מערכת','admin','#E63946','👑',0,pw)
+                    )
+                else:
+                    cur.execute(
+                        'INSERT INTO users (username,name,role,color,emoji,first_login,password_hash) VALUES (?,?,?,?,?,?,?)',
+                        ('admin','מנהל מערכת','admin','#E63946','👑',0,pw)
+                    )
+                conn.commit()
+                print('admin created')
+        finally:
+            conn.close()
 
-                CREATE TABLE IF NOT EXISTS requests (
-                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                    hospital     TEXT NOT NULL,
-                    dept         TEXT NOT NULL,
-                    requested_by TEXT NOT NULL,
-                    specialty    TEXT NOT NULL,
-                    urgency      TEXT NOT NULL,
-                    status       TEXT DEFAULT "searching",
-                    patient      TEXT,
-                    surgeon_id   INTEGER,
-                    eta_minutes  INTEGER,
-                    dist_km      REAL,
-                    traffic_label TEXT,
-                    matched_at   TEXT,
-                    completed_at TEXT,
-                    elapsed      INTEGER DEFAULT 0,
-                    FOREIGN KEY (surgeon_id) REFERENCES users(id)
-                );
-
-                CREATE TABLE IF NOT EXISTS audit_log (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_id    INTEGER,
-                    action     TEXT,
-                    details    TEXT
-                );
-            ''')
-            # Create default admin if no users exist
-            cur = c.execute('SELECT COUNT(*) FROM users')
-            if cur.fetchone()[0] == 0:
-                import hashlib
-                c.execute('''INSERT INTO users (username, name, role, color, emoji, first_login, password_hash)
-                             VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                          ('admin', 'מנהל מערכת', 'admin', '#E63946', '👑', 0,
-                           hashlib.sha256('admin123'.encode()).hexdigest()))
-                print('✅ נוצר משתמש admin ראשוני (סיסמה: admin123)')
-
-    # ── users ──────────────────────────────────────────────────
     def get_user(self, uid):
-        with get_conn() as c:
-            return row(c.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone())
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM users WHERE id={ph()}', (uid,))
+            return fix(fetchone(cur))
+        finally:
+            conn.close()
 
     def get_user_by_username(self, username):
-        with get_conn() as c:
-            return row(c.execute('SELECT * FROM users WHERE username=?', (username,)).fetchone())
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM users WHERE username={ph()}', (username,))
+            return fix(fetchone(cur))
+        finally:
+            conn.close()
 
     def get_all_users(self):
-        with get_conn() as c:
-            return [row(r) for r in c.execute('SELECT * FROM users ORDER BY id').fetchall()]
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT * FROM users ORDER BY id')
+            return [fix(r) for r in fetchall(cur)]
+        finally:
+            conn.close()
 
     def get_users_by_hospital(self, hospital):
-        with get_conn() as c:
-            return [row(r) for r in c.execute(
-                'SELECT * FROM users WHERE hospital=? ORDER BY id', (hospital,)).fetchall()]
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM users WHERE hospital={ph()} ORDER BY id', (hospital,))
+            return [fix(r) for r in fetchall(cur)]
+        finally:
+            conn.close()
 
     def get_users_by_dept(self, hospital, dept):
-        with get_conn() as c:
-            return [row(r) for r in c.execute(
-                'SELECT * FROM users WHERE hospital=? AND dept=? ORDER BY id',
-                (hospital, dept)).fetchall()]
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM users WHERE hospital={ph()} AND dept={ph()} ORDER BY id', (hospital,dept))
+            return [fix(r) for r in fetchall(cur)]
+        finally:
+            conn.close()
 
     def get_available_surgeons(self, specialty):
-        with get_conn() as c:
-            return [row(r) for r in c.execute(
-                'SELECT * FROM users WHERE role="surgeon" AND specialty=? AND can_travel=1 AND available=1',
-                (specialty,)).fetchall()]
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM users WHERE role={ph()} AND specialty={ph()} AND can_travel=1 AND available=1',('surgeon',specialty))
+            return [fix(r) for r in fetchall(cur)]
+        finally:
+            conn.close()
 
-    def create_user(self, username, name, role, hospital, dept, **kwargs):
-        role_config = {
-            'admin':       ('#E63946', '👑'),
-            'hospital_ceo':('#ffd166', '🏛️'),
-            'dept_head':   ('#4cc9f0', '🏥'),
-            'surgeon':     ('#06d6a0', '🩺'),
-            'dept_staff':  ('#c77dff', '🏨'),
-        }
-        color, emoji = role_config.get(role, ('#888', '👤'))
-        with get_conn() as c:
-            cur = c.execute('''INSERT INTO users
-                (username, name, role, hospital, dept, color, emoji,
-                 specialty, can_travel, transport, available, lat, lng, is_shared, first_login)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)''',
-                (username, name, role, hospital, dept, color, emoji,
-                 kwargs.get('specialty'), int(kwargs.get('can_travel', False)),
-                 kwargs.get('transport'), int(kwargs.get('can_travel', False)),
-                 kwargs.get('lat'), kwargs.get('lng'), int(kwargs.get('is_shared', False))))
-            uid = cur.lastrowid
+    def create_user(self, username, name, role, hospital, dept, **kw):
+        colors = {'admin':'#E63946','hospital_ceo':'#ffd166','dept_head':'#4cc9f0','surgeon':'#06d6a0','dept_staff':'#c77dff'}
+        emojis = {'admin':'👑','hospital_ceo':'🏛️','dept_head':'🏥','surgeon':'🩺','dept_staff':'🏨'}
+        color = colors.get(role,'#888')
+        emoji = emojis.get(role,'👤')
+        vals = (username,name,role,hospital,dept,color,emoji,
+                kw.get('specialty'),int(kw.get('can_travel',False)),
+                kw.get('transport'),int(kw.get('can_travel',False)),
+                kw.get('lat'),kw.get('lng'),int(kw.get('is_shared',False)))
+        sql = 'INSERT INTO users (username,name,role,hospital,dept,color,emoji,specialty,can_travel,transport,available,lat,lng,is_shared,first_login) VALUES ({p},1)'.format(p=phn(14))
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            if is_pg():
+                cur.execute(sql + ' RETURNING id', vals)
+                uid = cur.fetchone()[0]
+            else:
+                cur.execute(sql, vals)
+                uid = cur.lastrowid
+            conn.commit()
+        finally:
+            conn.close()
         return self.get_user(uid)
 
     def set_password(self, username, password_hash):
-        with get_conn() as c:
-            c.execute('UPDATE users SET password_hash=?, first_login=0 WHERE username=?',
-                      (password_hash, username))
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'UPDATE users SET password_hash={ph()}, first_login=0 WHERE username={ph()}', (password_hash,username))
+            conn.commit()
+        finally:
+            conn.close()
         return self.get_user_by_username(username)
 
     def update_user(self, uid, data):
-        allowed = ['name', 'hospital', 'dept', 'specialty', 'can_travel',
-                   'transport', 'available', 'lat', 'lng', 'color', 'emoji']
-        fields = {k: v for k, v in data.items() if k in allowed}
+        allowed = ['name','hospital','dept','specialty','can_travel','transport','available','lat','lng','color','emoji']
+        fields = {k:v for k,v in data.items() if k in allowed}
         if not fields:
             return self.get_user(uid)
-        sets = ', '.join(f'{k}=?' for k in fields)
+        p = ph()
+        sets = ', '.join(f'{k}={p}' for k in fields)
         vals = list(fields.values()) + [uid]
-        with get_conn() as c:
-            c.execute(f'UPDATE users SET {sets} WHERE id=?', vals)
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'UPDATE users SET {sets} WHERE id={p}', vals)
+            conn.commit()
+        finally:
+            conn.close()
         return self.get_user(uid)
 
     def delete_user(self, uid):
-        with get_conn() as c:
-            c.execute('DELETE FROM users WHERE id=?', (uid,))
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'DELETE FROM users WHERE id={ph()}', (uid,))
+            conn.commit()
+        finally:
+            conn.close()
 
-    # ── requests ───────────────────────────────────────────────
     def get_request(self, rid):
-        with get_conn() as c:
-            return row(c.execute('SELECT * FROM requests WHERE id=?', (rid,)).fetchone())
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM requests WHERE id={ph()}', (rid,))
+            return fix(fetchone(cur))
+        finally:
+            conn.close()
 
     def get_all_requests(self):
-        with get_conn() as c:
-            return [row(r) for r in c.execute(
-                'SELECT * FROM requests ORDER BY id DESC').fetchall()]
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT * FROM requests ORDER BY id DESC')
+            return [fix(r) for r in fetchall(cur)]
+        finally:
+            conn.close()
 
     def get_requests_by_hospital(self, hospital):
-        with get_conn() as c:
-            return [row(r) for r in c.execute(
-                'SELECT * FROM requests WHERE hospital=? ORDER BY id DESC',
-                (hospital,)).fetchall()]
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM requests WHERE hospital={ph()} ORDER BY id DESC',(hospital,))
+            return [fix(r) for r in fetchall(cur)]
+        finally:
+            conn.close()
 
     def get_requests_by_dept(self, hospital, dept):
-        with get_conn() as c:
-            return [row(r) for r in c.execute(
-                'SELECT * FROM requests WHERE hospital=? AND dept=? ORDER BY id DESC',
-                (hospital, dept)).fetchall()]
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM requests WHERE hospital={ph()} AND dept={ph()} ORDER BY id DESC',(hospital,dept))
+            return [fix(r) for r in fetchall(cur)]
+        finally:
+            conn.close()
 
     def get_open_requests(self, specialty):
-        with get_conn() as c:
-            return [row(r) for r in c.execute(
-                'SELECT * FROM requests WHERE status="searching" AND specialty=? ORDER BY id DESC',
-                (specialty,)).fetchall()]
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM requests WHERE status={ph()} AND specialty={ph()} ORDER BY id DESC',('searching',specialty))
+            return [fix(r) for r in fetchall(cur)]
+        finally:
+            conn.close()
 
     def create_request(self, hospital, dept, requested_by, specialty, urgency, patient):
-        with get_conn() as c:
-            cur = c.execute('''INSERT INTO requests
-                (hospital, dept, requested_by, specialty, urgency, patient, status)
-                VALUES (?,?,?,?,?,?,?)''',
-                (hospital, dept, requested_by, specialty, urgency,
-                 json.dumps(patient, ensure_ascii=False), 'searching'))
-            rid = cur.lastrowid
+        pj = json.dumps(patient, ensure_ascii=False)
+        sql = 'INSERT INTO requests (hospital,dept,requested_by,specialty,urgency,patient,status) VALUES ({p})'.format(p=phn(7))
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            vals = (hospital,dept,requested_by,specialty,urgency,pj,'searching')
+            if is_pg():
+                cur.execute(sql + ' RETURNING id', vals)
+                rid = cur.fetchone()[0]
+            else:
+                cur.execute(sql, vals)
+                rid = cur.lastrowid
+            conn.commit()
+        finally:
+            conn.close()
         return self.get_request(rid)
 
     def match_request(self, rid, surgeon_id, eta_minutes, dist_km):
-        from datetime import datetime
-        surgeon = self.get_user(surgeon_id)
-        traffic = self._traffic_label()
-        with get_conn() as c:
-            c.execute('''UPDATE requests SET
-                status="matched", surgeon_id=?, eta_minutes=?, dist_km=?,
-                traffic_label=?, matched_at=?
-                WHERE id=?''',
-                (surgeon_id, eta_minutes, dist_km, traffic,
-                 datetime.now().isoformat(), rid))
+        p = ph()
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f'UPDATE requests SET status={p},surgeon_id={p},eta_minutes={p},dist_km={p},traffic_label={p},matched_at={p} WHERE id={p}',
+                ('matched',surgeon_id,eta_minutes,dist_km,self._traffic(),datetime.now().isoformat(),rid)
+            )
+            conn.commit()
+        finally:
+            conn.close()
         return self.get_request(rid)
 
     def complete_request(self, rid):
-        with get_conn() as c:
-            c.execute('UPDATE requests SET status="completed", completed_at=? WHERE id=?',
-                      (datetime.now().isoformat(), rid))
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'UPDATE requests SET status={ph()},completed_at={ph()} WHERE id={ph()}',
+                        ('completed',datetime.now().isoformat(),rid))
+            conn.commit()
+        finally:
+            conn.close()
 
     def delete_request(self, rid):
-        with get_conn() as c:
-            c.execute('DELETE FROM requests WHERE id=?', (rid,))
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'DELETE FROM requests WHERE id={ph()}', (rid,))
+            conn.commit()
+        finally:
+            conn.close()
 
-    def _traffic_label(self):
+    def _traffic(self):
         h = datetime.now().hour
         if (7<=h<=9) or (16<=h<=19): return '🔴 פקק כבד'
         if (10<=h<=15) or (20<=h<=22): return '🟡 תנועה בינונית'
