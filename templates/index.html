@@ -434,11 +434,11 @@ function launchApp() {
 }
 
 var NAV = {
-  admin:        [['admin_dash','📊','מרכז בקרה'],['all_req','📋','כל הבקשות'],['sys_users','👥','משתמשים']],
-  hospital_ceo: [['ceo_dash','📊','סקירה'],['ceo_users','👥','מחלקות']],
-  dept_head:    [['send_req','📤','בקשה חדשה'],['my_req','📋','בקשות המחלקה'],['dept_surgeons','🩺','המנתחים שלי']],
+  admin:        [['admin_dash','📊','מרכז בקרה'],['all_req','📋','כל הבקשות'],['sys_users','👥','משתמשים'],['my_profile','👤','הפרופיל שלי']],
+  hospital_ceo: [['ceo_dash','📊','סקירה'],['ceo_users','👥','מחלקות'],['my_profile','👤','הפרופיל שלי']],
+  dept_head:    [['send_req','📤','בקשה חדשה'],['my_req','📋','בקשות המחלקה'],['dept_surgeons','🩺','המנתחים שלי'],['my_profile','👤','הפרופיל שלי']],
   surgeon:      [['open_req','🚨','בקשות פתוחות'],['my_profile','👤','הפרופיל שלי']],
-  dept_staff:   [['staff_send','📤','בקשה חדשה'],['staff_req','📋','בקשות המחלקה']],
+  dept_staff:   [['staff_send','📤','בקשה חדשה'],['staff_req','📋','בקשות המחלקה'],['my_profile','👤','הפרופיל שלי']],
 };
 
 function buildNav() {
@@ -662,267 +662,124 @@ async function endSurgery(rid) {
 }
 
 function pgMyProfile(el) {
-  el.innerHTML = '<div class="page-header"><div class="page-title">הפרופיל שלי</div></div>'+
-  '<div class="card"><div class="form-grid">'+
-    '<div class="form-field"><label>שם</label><input value="'+CU.name+'" disabled></div>'+
-    '<div class="form-field"><label>בית חולים</label><input value="'+(CU.hospital||'—')+'" disabled></div>'+
-    '<div class="form-field"><label>התמחות</label><input value="'+(CU.specialty||'—')+'" disabled></div>'+
-    '<div class="form-field"><label>זמינות לנסיעה</label>'+
-      '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">'+
-        '<span class="'+(CU.can_travel?'t-yes':'t-no')+'">'+(CU.can_travel?'✓ '+CU.transport:'✗ לא זמין')+'</span>'+
-        '<button class="btn-sm" onclick="resetAvail()">שנה</button>'+
-      '</div>'+
-    '</div>'+
-  '</div></div>';
+  var isSurgeon = CU.role === 'surgeon';
+  var html = '';
+
+  // personal info
+  html += '<div class="page-header"><div class="page-title">האזור האישי שלי</div><div class="page-sub">' + CU.name + '</div></div>';
+  html += '<div class="card" style="margin-bottom:16px">';
+  html += '<div class="card-title">👤 פרטים אישיים</div>';
+  html += '<div class="form-grid">';
+  html += '<div class="form-field"><label>שם מלא</label><input value="' + CU.name + '" disabled style="background:var(--s1)"></div>';
+  html += '<div class="form-field"><label>שם משתמש</label><input value="' + (CU.username||'—') + '" disabled style="background:var(--s1);font-family:var(--mono);font-size:12px"></div>';
+  html += '<div class="form-field"><label>תפקיד</label><input value="' + (ROLE_LABELS[CU.role]||CU.role) + '" disabled style="background:var(--s1)"></div>';
+  html += '<div class="form-field"><label>בית חולים</label><input value="' + (CU.hospital||'—') + '" disabled style="background:var(--s1)"></div>';
+  if (CU.dept) html += '<div class="form-field"><label>מחלקה</label><input value="' + CU.dept + '" disabled style="background:var(--s1)"></div>';
+  if (CU.specialty) html += '<div class="form-field"><label>התמחות</label><input value="' + CU.specialty + '" disabled style="background:var(--s1)"></div>';
+  html += '</div></div>';
+
+  // status (surgeons only)
+  if (isSurgeon) {
+    html += '<div class="card" style="margin-bottom:16px">';
+    html += '<div class="card-title">🏥 סטטוס עבודה</div>';
+
+    html += '<div style="margin-bottom:20px">';
+    html += '<div class="section-label">זמינות לבקשות חירום</div>';
+    html += '<div style="display:flex;gap:10px">';
+    html += '<button class="btn-sm ' + (CU.available ? 'green' : '') + '" onclick="setAvailStatus(true)" style="flex:1;padding:12px;font-size:14px">✅ זמין לבקשות</button>';
+    html += '<button class="btn-sm ' + (!CU.available ? 'red' : '') + '" onclick="setAvailStatus(false)" style="flex:1;padding:12px;font-size:14px">⛔ לא זמין כרגע</button>';
+    html += '</div></div>';
+
+    html += '<div>';
+    html += '<div class="section-label">יכולת הגעה לבית חולים אחר</div>';
+    html += '<div style="display:flex;gap:10px;margin-bottom:12px">';
+    html += '<button class="btn-sm ' + (CU.can_travel ? 'green' : '') + '" onclick="setTravelStatus(true)" style="flex:1;padding:12px;font-size:14px">🚗 יכול להגיע</button>';
+    html += '<button class="btn-sm ' + (!CU.can_travel ? 'red' : '') + '" onclick="setTravelStatus(false)" style="flex:1;padding:12px;font-size:14px">🚫 לא יכול להגיע</button>';
+    html += '</div>';
+
+    if (CU.can_travel) {
+      html += '<div class="section-label">אמצעי תחבורה</div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+      var transports = ['רכב פרטי', 'הסעה מבית החולים', 'אמבולנס / רכב חירום'];
+      transports.forEach(function(t) {
+        html += '<button class="btn-sm ' + (CU.transport===t ? 'green' : '') + '" onclick="setTransportType(\'' + t + '\')" style="padding:10px 16px">' + t + '</button>';
+      });
+      html += '</div>';
+    }
+    html += '</div></div>';
+  }
+
+  // password change
+  html += '<div class="card">';
+  html += '<div class="card-title">🔑 שינוי סיסמה</div>';
+  html += '<div id="pw-msg" style="display:none;margin-bottom:12px"></div>';
+  html += '<div class="form-grid">';
+  html += '<div class="form-field"><label>סיסמה נוכחית</label><input type="password" id="pw-old" placeholder="••••••••"></div>';
+  html += '<div class="form-field"></div>';
+  html += '<div class="form-field"><label>סיסמה חדשה</label><input type="password" id="pw-new1" placeholder="לפחות 6 תווים"></div>';
+  html += '<div class="form-field"><label>אימות סיסמה חדשה</label><input type="password" id="pw-new2" placeholder="הכנס שוב"></div>';
+  html += '</div>';
+  html += '<button class="btn-submit" style="max-width:200px;margin-top:8px" onclick="changePassword()">שמור סיסמה חדשה</button>';
+  html += '</div>';
+
+  el.innerHTML = html;
 }
 
-function resetAvail() {
-  document.getElementById('transport-opts').style.display='none';
-  document.getElementById('avail-name').textContent=CU.name;
-  document.getElementById('avail-modal').style.display='flex';
-}
-
-// ── dept head: surgeons ────────────────────────────────────────────
-async function pgDeptSurgeons(el) {
-  var users = await api('GET', '/users');
-  var surgeons = users.filter(function(u){ return u.role==='surgeon'&&u.hospital===CU.hospital&&u.dept===CU.dept; });
-  el.innerHTML = '<div class="page-header"><div class="page-title">המנתחים שלי</div><div class="page-sub">'+CU.dept+' · '+CU.hospital+'</div></div>'+
-  '<div class="card">'+
-    '<div class="card-title">🩺 מנתחים ('+surgeons.length+')</div>'+
-    surgeons.map(function(s){
-      return '<div class="user-card">'+
-        '<div class="user-avatar-lg" style="background:'+s.color+'">'+s.emoji+'</div>'+
-        '<div class="user-card-info">'+
-          '<div class="user-card-name">'+s.name+'</div>'+
-          '<div class="user-card-sub" style="display:flex;gap:6px;margin-top:4px">'+
-            '<span class="'+(s.can_travel?'t-yes':'t-no')+'">'+(s.can_travel?'✓ '+s.transport:'✗ לא זמין לנסיעה')+'</span>'+
-            (s.available?'<span class="badge badge-green">זמין</span>':'<span class="badge badge-gray">לא זמין</span>')+
-          '</div>'+
-        '</div>'+
-        '<div class="user-card-actions">'+
-          '<div class="icon-btn del" onclick="deleteUser('+s.id+')" title="הסר">🗑</div>'+
-        '</div>'+
-      '</div>';
-    }).join('')+
-    (surgeons.length===0?'<div class="empty" style="padding:24px"><div>אין מנתחים עדיין</div></div>':'')+
-    '<div class="add-form">'+
-      '<div class="section-label">הוספת מנתח</div>'+
-      '<div class="form-grid" style="margin-bottom:12px">'+
-        '<div class="form-field"><label>שם משתמש *</label><input id="ns-uid" placeholder="לדוגמה: dr_cohen"></div>'+
-        '<div class="form-field"><label>שם מלא *</label><input id="ns-name" placeholder="שם הרופא"></div>'+
-        '<div class="form-field"><label>התמחות</label><select id="ns-spec"><option>נוירוכירורגיה</option><option>קרדיולוגיה</option><option>טראומה</option><option>כירורגיה כללית</option><option>אורתופדיה</option></select></div>'+
-        '<div class="form-field"><label>יכולת נסיעה</label><select id="ns-travel"><option value="yes">יש — רכב פרטי</option><option value="hosp">יש — הסעה מבית החולים</option><option value="no">אין</option></select></div>'+
-      '</div>'+
-      '<button class="btn-sm green" onclick="addSurgeon()">+ הוסף מנתח</button>'+
-      '<div style="font-size:11px;color:var(--muted);margin-top:8px">המנתח יגדיר סיסמה בכניסה הראשונה</div>'+
-    '</div>'+
-  '</div>';
-}
-
-async function addSurgeon() {
-  var uid    = (document.getElementById('ns-uid')||{}).value||'';
-  var name   = (document.getElementById('ns-name')||{}).value||'';
-  var spec   = (document.getElementById('ns-spec')||{}).value||'';
-  var travel = (document.getElementById('ns-travel')||{}).value||'';
-  if(!uid.trim()||!name.trim()){ showToast('יש למלא שם משתמש ושם','err'); return; }
-  var canT = travel!=='no';
-  var trans = travel==='yes'?'רכב פרטי':travel==='hosp'?'הסעה מבית החולים':null;
+async function setAvailStatus(val) {
   try {
-    await api('POST', '/users', { username:uid.trim(), name:name.trim(), role:'surgeon',
-      hospital:CU.hospital, dept:CU.dept, specialty:spec, can_travel:canT, transport:trans });
-    showToast('✅ המנתח נוסף','ok');
-    pgDeptSurgeons(document.getElementById('page-dept_surgeons'));
-  } catch(e) { showToast(e.message,'err'); }
+    await api('PUT', '/users/' + CU.id, { available: val });
+    CU.available = val;
+    showToast(val ? '✅ סומנת כזמין לבקשות' : '⛔ סומנת כלא זמין', val ? 'ok' : '');
+    pgMyProfile(document.getElementById('page-my_profile'));
+  } catch(e) { showToast(e.message, 'err'); }
 }
 
-async function deleteUser(uid) {
+async function setTravelStatus(val) {
   try {
-    await api('DELETE', '/users/'+uid);
-    showToast('🗑 הוסר','');
-    renderPage(currentPage);
-  } catch(e) { showToast(e.message,'err'); }
+    await api('PUT', '/users/' + CU.id, { can_travel: val, available: val });
+    CU.can_travel = val; CU.available = val;
+    if (!val) CU.transport = null;
+    showToast(val ? '🚗 עודכן כיכול להגיע' : '🚫 עודכן כלא יכול להגיע', val ? 'ok' : '');
+    pgMyProfile(document.getElementById('page-my_profile'));
+  } catch(e) { showToast(e.message, 'err'); }
 }
 
-// ── CEO ────────────────────────────────────────────────────────────
-async function pgCeoDash(el) {
-  await loadRequests();
-  var mine = requests.filter(function(r){ return r.hospital===CU.hospital; });
-  var active  = mine.filter(function(r){ return r.status==='searching'; }).length;
-  var matched = mine.filter(function(r){ return r.status==='matched'; }).length;
-  el.innerHTML = '<div class="page-header"><div class="page-title">סקירת '+CU.hospital+'</div></div>'+
-  '<div class="stats-row" style="grid-template-columns:repeat(3,1fr)">'+
-    '<div class="stat-card"><div class="stat-num" style="color:var(--red)">'+active+'</div><div class="stat-lbl">בקשות פעילות</div></div>'+
-    '<div class="stat-card"><div class="stat-num" style="color:var(--green)">'+matched+'</div><div class="stat-lbl">הותאמו</div></div>'+
-    '<div class="stat-card"><div class="stat-num">'+mine.length+'</div><div class="stat-lbl">סה"כ</div></div>'+
-  '</div>'+
-  '<div class="card"><div class="section-label">בקשות אחרונות</div></div>';
-  var card=el.querySelector('.card');
-  mine.slice(0,5).forEach(function(r){ card.appendChild(buildReqCard(r,false,false)); });
-}
-
-async function pgCeoUsers(el) {
-  var users = await api('GET', '/users');
-  var deptHeads = users.filter(function(u){ return (u.role==='dept_head'||u.role==='surgeon'||u.role==='dept_staff')&&u.hospital===CU.hospital; });
-  el.innerHTML = '<div class="page-header"><div class="page-title">ניהול ראשי מחלקות</div><div class="page-sub">'+CU.hospital+'</div></div>'+
-  '<div class="card">'+
-    '<div class="card-title">🏥 ראשי מחלקות ('+deptHeads.length+')</div>'+
-    deptHeads.map(function(d){
-      return '<div class="user-card">'+
-        '<div class="user-avatar-lg" style="background:'+d.color+'">'+d.emoji+'</div>'+
-        '<div class="user-card-info"><div class="user-card-name">'+d.name+'</div><div class="user-card-sub">'+d.dept+'</div></div>'+
-        '<div class="user-card-actions"><div class="icon-btn del" onclick="deleteUser('+d.id+')" title="הסר">🗑</div></div>'+
-      '</div>';
-    }).join('')+
-    (deptHeads.length===0?'<div class="empty" style="padding:24px"><div>אין ראשי מחלקות</div></div>':'')+
-    '<div class="add-form">'+
-      '<div class="section-label">הוספת ראש מחלקה</div>'+
-      '<div class="form-grid" style="margin-bottom:12px">'+
-        '<div class="form-field"><label>שם משתמש *</label><input id="nd-uid" placeholder="לדוגמה: dept_neuro"></div>'+
-        '<div class="form-field"><label>שם מלא *</label><input id="nd-name" placeholder="שם הרופא"></div>'+
-        '<div class="form-field" style="grid-column:span 2"><label>שם המחלקה *</label><input id="nd-dept" placeholder="לדוגמה: נוירוכירורגיה"></div>'+
-      '</div>'+
-      '<button class="btn-sm" style="background:var(--blue);color:white;border-color:var(--blue)" onclick="addDeptHead()">+ הוסף ראש מחלקה</button>'+
-      '<div style="font-size:11px;color:var(--muted);margin-top:8px">ראש המחלקה יגדיר סיסמה בכניסה הראשונה</div>'+
-    '</div>'+
-  '</div>';
-}
-
-async function addDeptHead() {
-  var uid  = (document.getElementById('nd-uid') ||{}).value||'';
-  var name = (document.getElementById('nd-name')||{}).value||'';
-  var dept = (document.getElementById('nd-dept')||{}).value||'';
-  if(!uid.trim()||!name.trim()||!dept.trim()){ showToast('יש למלא את כל השדות','err'); return; }
+async function setTransportType(transport) {
   try {
-    await api('POST', '/users', { username:uid.trim(), name:name.trim(), role:'dept_head', hospital:CU.hospital, dept:dept.trim() });
-    showToast('✅ ראש המחלקה נוסף','ok');
-    pgCeoUsers(document.getElementById('page-ceo_users'));
-  } catch(e) { showToast(e.message,'err'); }
+    await api('PUT', '/users/' + CU.id, { transport: transport });
+    CU.transport = transport;
+    showToast('✅ אמצעי תחבורה עודכן: ' + transport, 'ok');
+    pgMyProfile(document.getElementById('page-my_profile'));
+  } catch(e) { showToast(e.message, 'err'); }
 }
 
-// ── admin ──────────────────────────────────────────────────────────
-async function pgAdminDash(el) {
-  await loadRequests();
-  var active = requests.filter(function(r){ return r.status==='searching'; }).length;
-  el.innerHTML = '<div class="page-header"><div class="page-title">מרכז בקרה</div></div>'+
-  '<div class="stats-row">'+
-    '<div class="stat-card"><div class="stat-num" style="color:var(--red)">'+active+'</div><div class="stat-lbl">בקשות פעילות</div></div>'+
-    '<div class="stat-card"><div class="stat-num" style="color:var(--green)">'+requests.filter(function(r){return r.status==='matched';}).length+'</div><div class="stat-lbl">הותאמו</div></div>'+
-    '<div class="stat-card"><div class="stat-num">'+requests.length+'</div><div class="stat-lbl">סה"כ בקשות</div></div>'+
-    '<div class="stat-card"><div class="stat-num" id="surgeon-count">—</div><div class="stat-lbl">מנתחים</div></div>'+
-  '</div>';
-  api('GET','/users').then(function(users){
-    var el2=document.getElementById('surgeon-count');
-    if(el2) el2.textContent=users.filter(function(u){return u.role==='surgeon';}).length;
-  });
-}
-
-async function pgAllReq(el) {
-  await loadRequests();
-  el.innerHTML = '<div class="page-header"><div class="page-title">כל הבקשות</div></div>';
-  if(!requests.length){ el.innerHTML+='<div class="empty"><div class="empty-icon">📋</div><div>אין בקשות</div></div>'; return; }
-  requests.forEach(function(r){ el.appendChild(buildReqCard(r,true,false)); });
-}
-
-async function pgSysUsers(el) {
-  var users = await api('GET', '/users');
-  el.innerHTML = '<div class="page-header"><div class="page-title">ניהול משתמשים</div></div>';
-
-  // Add new user form
-  var addCard = document.createElement('div');
-  addCard.className = 'card';
-  addCard.style.marginBottom = '20px';
-  addCard.innerHTML =
-    '<div class="card-title">➕ הוספת משתמש חדש</div>'+
-    '<div class="form-grid" style="margin-bottom:14px">'+
-      '<div class="form-field"><label>שם משתמש *</label><input id="au-username" placeholder="לדוגמה: ceo_ichilov"></div>'+
-      '<div class="form-field"><label>שם מלא *</label><input id="au-name" placeholder="שם הרופא / המנהל"></div>'+
-      '<div class="form-field"><label>תפקיד *</label><select id="au-role">'+
-        '<option value="hospital_ceo">🏛️ ראש בית חולים</option>'+
-        '<option value="dept_head">🏥 ראש מחלקה</option>'+
-        '<option value="surgeon">🩺 מנתח</option>'+
-        '<option value="dept_staff">🏨 צוות משותף</option>'+
-        '<option value="admin">👑 מנהל מערכת</option>'+
-      '</select></div>'+
-      '<div class="form-field"><label>בית חולים</label><select id="au-hospital">'+
-        '<option value="">בחר...</option>'+
-        '<option>איכילוב</option><option>שיבא</option><option>הדסה עין כרם</option>'+
-        '<option>הדסה הר הצופים</option><option>רמב"ם</option><option>וולפסון</option>'+
-        '<option>סורוקה</option><option>שערי צדק</option><option>בני ציון</option><option>זיו</option>'+
-      '</select></div>'+
-      '<div class="form-field"><label>מחלקה</label><input id="au-dept" placeholder="לדוגמה: נוירוכירורגיה"></div>'+
-      '<div class="form-field"><label>התמחות (מנתחים בלבד)</label><select id="au-spec">'+
-        '<option value="">—</option>'+
-        '<option>נוירוכירורגיה</option><option>קרדיולוגיה</option><option>טראומה</option>'+
-        '<option>כירורגיה כללית</option><option>אורתופדיה</option>'+
-      '</select></div>'+
-    '</div>'+
-    '<button class="btn-submit" style="max-width:200px" onclick="adminAddUser()">+ הוסף משתמש</button>'+
-    '<div style="font-size:11px;color:var(--muted);margin-top:8px">המשתמש יגדיר סיסמה בכניסה הראשונה</div>';
-  el.appendChild(addCard);
-
-  // Group by hospital, then by role inside
-  var byHospital = {};
-  users.forEach(function(u){
-    var h = u.hospital || '— ללא בית חולים —';
-    if(!byHospital[h]) byHospital[h] = [];
-    byHospital[h].push(u);
-  });
-
-  var roleOrder = ['admin','hospital_ceo','dept_head','surgeon','dept_staff'];
-  Object.keys(byHospital).sort().forEach(function(hosp){
-    var hospUsers = byHospital[hosp];
-    var hospCard = document.createElement('div');
-    hospCard.className = 'card';
-    hospCard.style.marginBottom = '16px';
-
-    // Group by role inside this hospital
-    var byRole = {};
-    hospUsers.forEach(function(u){ if(!byRole[u.role]) byRole[u.role]=[]; byRole[u.role].push(u); });
-
-    var rolesHtml = roleOrder.map(function(role){
-      var list = byRole[role]||[];
-      if(!list.length) return '';
-      return '<div style="margin-bottom:12px">'+
-        '<div class="section-label" style="margin-bottom:8px">'+(list[0].emoji||'👤')+' '+ROLE_LABELS[role]+' ('+list.length+')</div>'+
-        list.map(function(u){
-          return '<div class="user-card">'+
-            '<div class="user-avatar-lg" style="background:'+(u.color||'#888')+'">'+u.emoji+'</div>'+
-            '<div class="user-card-info">'+
-              '<div class="user-card-name">'+u.name+'</div>'+
-              '<div class="user-card-sub" style="font-family:var(--mono);font-size:10px">'+u.username+(u.dept?' · '+u.dept:'')+'</div>'+
-              '<div class="user-card-sub" style="margin-top:3px"><span class="badge '+(u.first_login?'badge-yellow':'badge-green')+'">'+(u.first_login?'⏳ ממתין לכניסה':'✓ פעיל')+'</span></div>'+
-            '</div>'+
-            '<div class="user-card-actions">'+
-              '<div class="icon-btn del" onclick="deleteUser('+u.id+')" title="הסר">🗑</div>'+
-            '</div>'+
-          '</div>';
-        }).join('')+
-      '</div>';
-    }).join('');
-
-    hospCard.innerHTML = '<div class="card-title">🏥 '+hosp+' ('+hospUsers.length+' משתמשים)</div>' + rolesHtml;
-    el.appendChild(hospCard);
-  });
-}
-
-async function adminAddUser() {
-  var username = (document.getElementById('au-username')||{}).value||'';
-  var name     = (document.getElementById('au-name')||{}).value||'';
-  var role     = (document.getElementById('au-role')||{}).value||'';
-  var hospital = (document.getElementById('au-hospital')||{}).value||'';
-  var dept     = (document.getElementById('au-dept')||{}).value||'';
-  var spec     = (document.getElementById('au-spec')||{}).value||'';
-  if(!username.trim()||!name.trim()){ showToast('יש למלא שם משתמש ושם מלא','err'); return; }
+async function changePassword() {
+  var oldPw  = (document.getElementById('pw-old')  || {}).value || '';
+  var newPw1 = (document.getElementById('pw-new1') || {}).value || '';
+  var newPw2 = (document.getElementById('pw-new2') || {}).value || '';
+  var msg = document.getElementById('pw-msg');
+  if (!oldPw)         { showMsg(msg, 'יש להזין סיסמה נוכחית', 'err'); return; }
+  if (newPw1.length < 6) { showMsg(msg, 'הסיסמה החדשה חייבת להכיל לפחות 6 תווים', 'err'); return; }
+  if (newPw1 !== newPw2)  { showMsg(msg, 'הסיסמאות החדשות אינן תואמות', 'err'); return; }
   try {
-    await api('POST', '/users', {
-      username: username.trim(), name: name.trim(), role,
-      hospital: hospital||null, dept: dept||null,
-      specialty: spec||null
-    });
-    showToast('✅ המשתמש נוסף בהצלחה','ok');
-    pgSysUsers(document.getElementById('page-sys_users'));
-  } catch(e) { showToast(e.message,'err'); }
+    await api('POST', '/change-password', { old_password: oldPw, new_password: newPw1 });
+    showMsg(msg, '✅ הסיסמה שונתה בהצלחה', 'ok');
+    document.getElementById('pw-old').value = '';
+    document.getElementById('pw-new1').value = '';
+    document.getElementById('pw-new2').value = '';
+  } catch(e) { showMsg(msg, e.message, 'err'); }
 }
+
+function showMsg(el, text, type) {
+  el.style.display = 'block';
+  el.textContent = text;
+  el.style.background = type === 'ok' ? '#D1FAE5' : '#FEE2E2';
+  el.style.color       = type === 'ok' ? '#047857' : 'var(--red)';
+  el.style.padding = '10px 14px';
+  el.style.borderRadius = '8px';
+  el.style.fontSize = '13px';
+}
+
 
 // ── build req card ─────────────────────────────────────────────────
 function buildReqCard(r, showPatient, selectable) {
