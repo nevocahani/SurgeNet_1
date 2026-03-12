@@ -3,11 +3,10 @@ from database import db
 from functools import wraps
 import hashlib, os, time, sys
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 import database
-database.DB_PATH = os.path.join(BASE_DIR, 'surgenet.db')
+database.DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'surgenet.db')
 
-app = Flask(__name__, template_folder=os.path.join(BASE_DIR, "templates"))
+app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(32))
 
 # ── helpers ──────────────────────────────────────────────────────
@@ -221,10 +220,41 @@ def delete_request(current_user, rid):
 
 # ── matching engine ───────────────────────────────────────────────
 def _calc_travel(surgeon, req):
-    import math
+    import math, urllib.request, json as _json
+
     dest = _hospital_coords(req['hospital'])
     if not surgeon.get('lat') or not dest:
         return {'mins': 20, 'dist': 10}
+
+    # ── OpenRouteService API (חינמי, ללא כרטיס אשראי) ───────────
+    api_key = os.environ.get('ORS_API_KEY')
+    if api_key and surgeon.get('lat') and dest:
+        try:
+            url = 'https://api.openrouteservice.org/v2/directions/driving-car'
+            body = _json.dumps({
+                'coordinates': [
+                    [surgeon['lng'], surgeon['lat']],
+                    [dest['lng'], dest['lat']]
+                ]
+            }).encode('utf-8')
+            req_obj = urllib.request.Request(
+                url,
+                data=body,
+                headers={
+                    'Authorization': api_key,
+                    'Content-Type': 'application/json'
+                }
+            )
+            with urllib.request.urlopen(req_obj, timeout=5) as r:
+                data = _json.loads(r.read())
+            summary = data['routes'][0]['summary']
+            mins = max(3, round(summary['duration'] / 60))
+            dist = round(summary['distance'] / 1000, 1)
+            return {'mins': mins, 'dist': dist}
+        except Exception as e:
+            print(f'ORS API error: {e} — falling back to estimate')
+
+    # ── fallback: חישוב מוערך לפי פקקים ────────────────────────
     lat1, lng1 = surgeon['lat'], surgeon['lng']
     lat2, lng2 = dest['lat'], dest['lng']
     R = 6371
@@ -250,6 +280,7 @@ def _hospital_coords(name):
         'שערי צדק':          {'lat': 31.7817, 'lng': 35.1878},
     }
     return coords.get(name)
+
 
 def _auto_match(req_id):
     req = db.get_request(req_id)
