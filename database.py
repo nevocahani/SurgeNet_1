@@ -93,7 +93,7 @@ SCHEMA = [
 
 class Database:
     def init(self):
-        serial = 'SERIAL' if is_pg() else 'INTEGER AUTOINCREMENT'
+        serial = 'SERIAL' if is_pg() else 'INTEGER'
         conn = get_conn()
         try:
             cur = conn.cursor()
