@@ -76,7 +76,7 @@ SCHEMA = [
     """CREATE TABLE IF NOT EXISTS requests (
         id            {serial} PRIMARY KEY,
         hospital      TEXT NOT NULL,
-        dept          TEXT NOT NULL,
+        dept          TEXT NOT NULL DEFAULT '',
         requested_by  TEXT NOT NULL,
         specialty     TEXT NOT NULL,
         urgency       TEXT NOT NULL,
