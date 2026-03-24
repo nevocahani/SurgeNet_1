@@ -191,7 +191,7 @@ def create_request(current_user):
 
     req = db.create_request(
         hospital     = current_user['hospital'],
-        dept         = current_user['dept'],
+        dept         = current_user.get('dept') or '',
         requested_by = data.get('sender_name', current_user['name']),
         specialty    = data['specialty'],
         urgency      = data['urgency'],
