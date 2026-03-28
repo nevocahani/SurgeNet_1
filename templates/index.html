@@ -292,9 +292,9 @@ tr:hover td { background:var(--s1); }
       <button class="btn-avail-no"  onclick="saveAvailability(false, null)">לא כרגע</button>
     </div>
     <div class="transport-opts" id="transport-opts">
-      <div class="transport-opt" onclick="saveAvailability(true,'רכב פרטי')">🚗 רכב פרטי</div>
-      <div class="transport-opt" onclick="saveAvailability(true,'הסעה מבית החולים')">🚐 הסעה מבית החולים</div>
-      <div class="transport-opt" onclick="saveAvailability(true,'אמבולנס / רכב חירום')">🚑 אמבולנס / רכב חירום</div>
+      <div class="transport-opt" onclick="pickTransport('רכב פרטי')">🚗 רכב פרטי</div>
+      <div class="transport-opt" onclick="pickTransport('הסעה מבית החולים')">🚐 הסעה מבית החולים</div>
+      <div class="transport-opt" onclick="pickTransport('אמבולנס / רכב חירום')">🚑 אמבולנס / רכב חירום</div>
     </div>
   </div>
 </div>
@@ -397,6 +397,11 @@ async function doLogout() {
 
 // ── availability ──────────────────────────────────────────────────
 function showTransport() { document.getElementById('transport-opts').style.display = 'block'; }
+
+function pickTransport(el) {
+  var transport = el.getAttribute('data-transport');
+  saveAvailability(true, transport);
+}
 
 async function saveAvailability(canTravel, transport) {
   await api('POST', '/surgeon/availability', { can_travel:canTravel, transport, available:canTravel });
@@ -796,7 +801,10 @@ async function pgStaffReq(el) { return pgMyReq(el); }
 // ── dept head: surgeons ───────────────────────────────────────────
 async function pgDeptSurgeons(el) {
   var users = await api('GET', '/users');
-  var surgeons = users.filter(function(u){ return u.role==='surgeon'&&u.hospital===CU.hospital&&u.dept===CU.dept; });
+  var surgeons = users.filter(function(u){ 
+    return u.role==='surgeon' && u.hospital===CU.hospital && 
+           (u.dept===CU.dept || !u.dept || u.dept==='');
+  });
   el.innerHTML = '<div class="page-header"><div class="page-title">המנתחים שלי</div><div class="page-sub">'+CU.dept+' · '+CU.hospital+'</div></div>'+
   '<div class="card">'+
     '<div class="card-title">🩺 מנתחים ('+surgeons.length+')</div>'+
@@ -962,8 +970,8 @@ async function pgSysUsers(el) {
         '<option>הדסה הר הצופים</option><option>רמב"ם</option><option>וולפסון</option>'+
         '<option>סורוקה</option><option>שערי צדק</option><option>בני ציון</option><option>זיו</option>'+
       '</select></div>'+
-      '<div class="form-field"><label>מחלקה</label><input id="au-dept" placeholder="לדוגמה: נוירוכירורגיה"></div>'+
-      '<div class="form-field"><label>התמחות</label><select id="au-spec">'+
+      '<div class="form-field"><label>מחלקה <span style="color:var(--muted);font-size:10px">(לראש מחלקה / מנתח / צוות)</span></label><input id="au-dept" placeholder="לדוגמה: נוירוכירורגיה"></div>'+
+      '<div class="form-field"><label>התמחות <span style="color:var(--muted);font-size:10px">(למנתחים בלבד)</span></label><select id="au-spec">'+
         '<option value="">—</option>'+
         '<option>נוירוכירורגיה</option><option>קרדיולוגיה</option><option>טראומה</option>'+
         '<option>כירורגיה כללית</option><option>אורתופדיה</option>'+
