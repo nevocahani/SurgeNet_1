@@ -135,9 +135,18 @@ def create_user(current_user):
     return jsonify({'ok': True, 'user': safe_user(user)}), 201
 
 @app.route('/api/users/<int:uid>', methods=['PUT'])
-@login_required(roles=['admin', 'hospital_ceo', 'dept_head'])
+@login_required()
 def update_user(current_user, uid):
+    # surgeon can only update themselves
+    if current_user['role'] == 'surgeon' and current_user['id'] != uid:
+        return jsonify({'error': 'אין הרשאה'}), 403
+    if current_user['role'] not in ['admin','hospital_ceo','dept_head','surgeon']:
+        return jsonify({'error': 'אין הרשאה'}), 403
+    # convert booleans to int for PostgreSQL
     data = request.json
+    for field in ('can_travel', 'available'):
+        if field in data and isinstance(data[field], bool):
+            data[field] = int(data[field])
     user = db.update_user(uid, data)
     if not user:
         return jsonify({'error': 'משתמש לא נמצא'}), 404
@@ -153,9 +162,9 @@ def delete_user(current_user, uid):
 @login_required(roles=['surgeon'])
 def set_availability(current_user):
     data = request.json
-    can_travel = data.get('can_travel', False)
+    can_travel = int(bool(data.get('can_travel', False)))
     transport  = data.get('transport')
-    available  = data.get('available', can_travel)
+    available  = int(bool(data.get('available', can_travel)))
     db.update_user(current_user['id'], {
         'can_travel': can_travel,
         'transport':  transport,
