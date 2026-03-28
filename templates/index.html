@@ -398,8 +398,7 @@ async function doLogout() {
 // ── availability ──────────────────────────────────────────────────
 function showTransport() { document.getElementById('transport-opts').style.display = 'block'; }
 
-function pickTransport(el) {
-  var transport = el.getAttribute('data-transport');
+function pickTransport(transport) {
   saveAvailability(true, transport);
 }
 
