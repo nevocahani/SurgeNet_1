@@ -280,6 +280,15 @@ class Database:
         finally:
             conn.close()
 
+    def get_all_open_requests(self):
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM requests WHERE status={ph()} ORDER BY id DESC',('searching',))
+            return [fix(r) for r in fetchall(cur)]
+        finally:
+            conn.close()
+
     def create_request(self, hospital, dept, requested_by, specialty, urgency, patient):
         pj = json.dumps(patient, ensure_ascii=False)
         sql = 'INSERT INTO requests (hospital,dept,requested_by,specialty,urgency,patient,status) VALUES ({p})'.format(p=phn(7))
