@@ -184,7 +184,8 @@ def get_requests(current_user):
     elif role in ('dept_head', 'dept_staff'):
         reqs = db.get_requests_by_dept(current_user['hospital'], current_user['dept'])
     elif role == 'surgeon':
-        reqs = db.get_open_requests(current_user['specialty'])
+        # show all open requests - surgeon can decide to accept or not
+        reqs = db.get_all_open_requests()
     else:
         reqs = []
     return jsonify(reqs)
