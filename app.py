@@ -334,9 +334,18 @@ def index():
     return render_template('index.html')
 
 if __name__ == '__main__':
+    # אתחול מסד הנתונים
     db.init()
-    port = int(os.environ.get('PORT', 5000))
-    host = '0.0.0.0' if os.environ.get('RAILWAY_ENVIRONMENT') else '127.0.0.1'
-    debug = not os.environ.get('RAILWAY_ENVIRONMENT')
-    print(f'\n✅ SurgeNet פועל על port {port}\n')
+    
+    # Render מגדיר את ה-PORT באופן אוטומטי
+    port = int(os.environ.get('PORT', 10000))
+    
+    # חשוב: ב-Render אנחנו חייבים להשתמש ב-0.0.0.0 כדי שהאתר יהיה נגיש
+    # הסרנו את הבדיקה של RAILWAY_ENVIRONMENT
+    host = '0.0.0.0'
+    
+    # בשרת ייצור (Production) מומלץ ש-debug יהיה False
+    debug = os.environ.get('DEBUG', 'False').lower() == 'true'
+    
+    print(f'\n✅ SurgeNet פועל על port {port} בכתובת {host}\n')
     app.run(host=host, port=port, debug=debug)
