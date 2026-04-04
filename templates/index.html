@@ -450,7 +450,7 @@ function launchApp() {
 }
 
 var NAV = {
-  admin:        [['admin_dash','📊','מרכז בקרה'],['all_req','📋','כל הבקשות'],['sys_users','👥','משתמשים'],['my_profile','👤','הפרופיל שלי']],
+  admin:        [['admin_dash','📊','מרכז בקרה'],['all_req','📋','כל הבקשות'],['sys_users','👥','משתמשים'],['audit_log','🔍','לוג פעולות'],['my_profile','👤','הפרופיל שלי']],
   hospital_ceo: [['ceo_dash','📊','סקירה'],['ceo_users','👥','מחלקות'],['my_profile','👤','הפרופיל שלי']],
   dept_head:    [['send_req','📤','בקשה חדשה'],['my_req','📋','בקשות המחלקה'],['dept_surgeons','🩺','המנתחים שלי'],['my_profile','👤','הפרופיל שלי']],
   surgeon:      [['open_req','🚨','בקשות פתוחות'],['my_profile','👤','הפרופיל שלי']],
@@ -491,7 +491,7 @@ function switchPage(id, tab) {
 
 function renderPage(id) {
   var el = document.getElementById('page-'+id); if (!el) return;
-  var map = { admin_dash:pgAdminDash, all_req:pgAllReq, sys_users:pgSysUsers,
+  var map = { admin_dash:pgAdminDash, all_req:pgAllReq, sys_users:pgSysUsers, audit_log:pgAuditLog,
               ceo_dash:pgCeoDash, ceo_users:pgCeoUsers,
               send_req:pgSendReq, my_req:pgMyReq, dept_surgeons:pgDeptSurgeons,
               open_req:pgOpenReq, my_profile:pgMyProfile,
@@ -1045,6 +1045,42 @@ async function adminAddUser() {
     showToast('✅ המשתמש נוסף','ok');
     pgSysUsers(document.getElementById('page-sys_users'));
   } catch(e) { showToast(e.message,'err'); }
+}
+
+
+async function pgAuditLog(el) {
+  el.innerHTML = '<div class="page-header"><div class="page-title">לוג פעולות</div><div class="page-sub">200 פעולות אחרונות</div></div>';
+  try {
+    var logs = await api('GET', '/audit-log');
+    if (!logs.length) {
+      el.innerHTML += '<div class="empty"><div class="empty-icon">📋</div><div>אין פעולות</div></div>';
+      return;
+    }
+    var ACTION_LABELS = {
+      'login': '✅ כניסה',
+      'login_failed': '❌ כניסה כושלת',
+      'logout': '🚪 יציאה',
+      'create_request': '📤 בקשה נשלחה',
+      'accept_request': '✓ בקשה אושרה',
+      'complete_request': '🏁 ניתוח הסתיים',
+    };
+    var html = '<div class="card"><div class="table-wrap"><table>';
+    html += '<thead><tr><th>זמן</th><th>משתמש</th><th>פעולה</th><th>פרטים</th><th>IP</th></tr></thead><tbody>';
+    logs.forEach(function(log) {
+      var dt = log.created_at ? new Date(log.created_at).toLocaleString('he-IL') : '—';
+      var action = ACTION_LABELS[log.action] || log.action;
+      var isErr = log.action === 'login_failed';
+      html += '<tr' + (isErr ? ' style="background:#FFF1F2"' : '') + '>';
+      html += '<td style="font-family:var(--mono);font-size:11px;color:var(--muted)">' + dt + '</td>';
+      html += '<td><strong>' + (log.username||'—') + '</strong></td>';
+      html += '<td>' + action + '</td>';
+      html += '<td style="color:var(--muted);font-size:12px">' + (log.details||'') + '</td>';
+      html += '<td style="font-family:var(--mono);font-size:11px;color:var(--muted)">' + (log.ip||'—') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div></div>';
+    el.innerHTML += html;
+  } catch(e) { el.innerHTML += '<div class="empty"><div>שגיאה בטעינת הלוג</div></div>'; }
 }
 
 
