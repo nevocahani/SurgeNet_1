@@ -441,7 +441,7 @@ function launchApp() {
 
   buildNav();
   // tick for elapsed timers
-  tickInterval = setInterval(tick, 1000);
+  tickInterval = setInterval(tick, 5000);
 }
 
 var NAV = {
@@ -495,11 +495,17 @@ function renderPage(id) {
 }
 
 function tick() {
-  requests.forEach(function(r){ if(r.status==='searching') r._elapsed = (r._elapsed||0)+1; });
+  // only update elapsed timers, don't reload from server every tick
+  requests.forEach(function(r){ if(r.status==='searching') r._elapsed = (r._elapsed||0)+5; });
   ['my_req','staff_req','open_req','all_req'].forEach(function(pid){
     if(currentPage===pid){ var el=document.getElementById('page-'+pid); if(el && el.classList.contains('active')) renderPage(pid); }
   });
 }
+
+// refresh data from server every 15 seconds
+setInterval(async function(){
+  await loadRequests();
+}, 15000);
 
 // ── request form ──────────────────────────────────────────────────
 function selUrg(l,el){
