@@ -6,13 +6,19 @@ DATABASE_URL = os.environ.get('DATABASE_URL')
 def get_conn():
     if DATABASE_URL:
         import psycopg2
-        # Supabase requires SSL
         url = DATABASE_URL
-        if 'supabase' in url and 'sslmode' not in url:
-            url += '?sslmode=require'
-        conn = psycopg2.connect(url)
-        conn.autocommit = False
-        return conn
+        if 'sslmode' not in url:
+            sep = '&' if '?' in url else '?'
+            url += sep + 'sslmode=require'
+        for attempt in range(3):
+            try:
+                conn = psycopg2.connect(url, connect_timeout=10)
+                conn.autocommit = False
+                return conn
+            except Exception as e:
+                if attempt == 2:
+                    raise
+                import time; time.sleep(0.5)
     else:
         import sqlite3
         path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'surgenet.db')
