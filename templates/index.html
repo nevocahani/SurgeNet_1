@@ -264,6 +264,10 @@ tr:hover td { background:var(--s1); }
     <div class="info-msg"  id="login-info"></div>
     <div class="field-group"><label>שם משתמש</label><input id="login-user" type="text" placeholder="הכנס שם משתמש" onkeydown="if(event.key==='Enter')doLogin()"></div>
     <div class="field-group"><label>סיסמה</label><input id="login-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;direction:rtl">
+      <input type="checkbox" id="remember-me" style="width:16px;height:16px;cursor:pointer">
+      <label for="remember-me" style="font-size:13px;color:var(--muted);cursor:pointer">זכור אותי במכשיר זה</label>
+    </div>
     <button class="btn-primary" onclick="doLogin()">כניסה</button>
   </div>
 </div>
@@ -345,10 +349,11 @@ async function api(method, path, body) {
 async function doLogin() {
   var u = document.getElementById('login-user').value.trim();
   var p = document.getElementById('login-pass').value;
+  var remember = document.getElementById('remember-me') && document.getElementById('remember-me').checked;
   var err = document.getElementById('login-err');
   err.style.display = 'none';
   try {
-    var data = await api('POST', '/login', { username:u, password:p });
+    var data = await api('POST', '/login', { username:u, password:p, remember_me: remember });
     if (data.first_login) {
       document.getElementById('fl-user').value = u;
       document.getElementById('login-screen').style.display = 'none';
@@ -414,7 +419,7 @@ async function saveAvailability(canTravel, transport) {
 window.addEventListener('load', async () => {
   try {
     var data = await api('GET', '/me');
-    if (data.logged_in) {
+    if (data.logged_in && data.remembered) {
       CU = data.user;
       launchApp();
     } else {
