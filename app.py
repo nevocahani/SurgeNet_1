@@ -43,6 +43,7 @@ def login():
     if user['password_hash'] != hash_password(password):
         return jsonify({'error': 'סיסמה שגויה'}), 401
     session['user_id'] = user['id']
+    session['remembered'] = bool(data.get('remember_me', False))
     return jsonify({'ok': True, 'user': safe_user(user)})
 
 @app.route('/api/first-login', methods=['POST'])
@@ -59,6 +60,7 @@ def first_login():
     user = db.set_password(username, hash_password(p1))
     session.pop('pending_user', None)
     session['user_id'] = user['id']
+    session['remembered'] = bool(data.get('remember_me', False))
     return jsonify({'ok': True, 'user': safe_user(user)})
 
 @app.route('/api/logout', methods=['POST'])
@@ -73,7 +75,7 @@ def me():
     user = db.get_user(session['user_id'])
     if not user:
         return jsonify({'logged_in': False})
-    return jsonify({'logged_in': True, 'user': safe_user(user)})
+    return jsonify({'logged_in': True, 'user': safe_user(user), 'remembered': session.get('remembered', False)})
 
 @app.route('/api/change-password', methods=['POST'])
 @login_required()
@@ -334,18 +336,9 @@ def index():
     return render_template('index.html')
 
 if __name__ == '__main__':
-    # אתחול מסד הנתונים
     db.init()
-    
-    # Render מגדיר את ה-PORT באופן אוטומטי
-    port = int(os.environ.get('PORT', 10000))
-    
-    # חשוב: ב-Render אנחנו חייבים להשתמש ב-0.0.0.0 כדי שהאתר יהיה נגיש
-    # הסרנו את הבדיקה של RAILWAY_ENVIRONMENT
-    host = '0.0.0.0'
-    
-    # בשרת ייצור (Production) מומלץ ש-debug יהיה False
-    debug = os.environ.get('DEBUG', 'False').lower() == 'true'
-    
-    print(f'\n✅ SurgeNet פועל על port {port} בכתובת {host}\n')
+    port = int(os.environ.get('PORT', 5000))
+    host = '0.0.0.0' if os.environ.get('RAILWAY_ENVIRONMENT') else '127.0.0.1'
+    debug = not os.environ.get('RAILWAY_ENVIRONMENT')
+    print(f'\n✅ SurgeNet פועל על port {port}\n')
     app.run(host=host, port=port, debug=debug)
