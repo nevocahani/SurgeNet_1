@@ -356,4 +356,103 @@ class Database:
         if (10<=h<=15) or (20<=h<=22): return '🟡 תנועה בינונית'
         return '🟢 כביש פנוי'
 
+    # ── login security ────────────────────────────────────────────
+    def record_failed_login(self, username):
+        from datetime import datetime, timedelta
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            p = ph()
+            cur.execute(f'SELECT failed_attempts FROM users WHERE username={p}', (username,))
+            row = cur.fetchone()
+            if not row:
+                return 0
+            attempts = (row[0] if isinstance(row, (list,tuple)) else list(dict(row).values())[0] or 0) + 1
+            locked_until = None
+            if attempts >= 5:
+                locked_until = (datetime.utcnow() + timedelta(minutes=15)).isoformat()
+            cur.execute(
+                f'UPDATE users SET failed_attempts={p}, locked_until={p} WHERE username={p}',
+                (attempts, locked_until, username)
+            )
+            conn.commit()
+            return attempts
+        finally:
+            conn.close()
+
+    def reset_failed_login(self, username):
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                f'UPDATE users SET failed_attempts=0, locked_until=NULL WHERE username={ph()}',
+                (username,)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def is_locked(self, username):
+        from datetime import datetime
+        user = self.get_user_by_username(username)
+        if not user or not user.get('locked_until'):
+            return False, 0
+        locked_until = datetime.fromisoformat(user['locked_until'])
+        now = datetime.utcnow()
+        if now < locked_until:
+            mins = int((locked_until - now).total_seconds() / 60) + 1
+            return True, mins
+        self.reset_failed_login(username)
+        return False, 0
+
+    def log_action(self, user_id, username, action, details='', ip=''):
+        from datetime import datetime
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            if is_pg():
+                cur.execute(
+                    'INSERT INTO audit_log (user_id, username, action, details, ip, created_at) VALUES (%s,%s,%s,%s,%s,%s)',
+                    (user_id, username, action, details, ip, datetime.utcnow().isoformat())
+                )
+            else:
+                cur.execute(
+                    'INSERT INTO audit_log (user_id, username, action, details, ip, created_at) VALUES (?,?,?,?,?,?)',
+                    (user_id, username, action, details, ip, datetime.utcnow().isoformat())
+                )
+            conn.commit()
+        except:
+            pass
+        finally:
+            conn.close()
+
+    def get_audit_log(self, limit=100):
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'SELECT * FROM audit_log ORDER BY id DESC LIMIT {limit}')
+            return fetchall(cur)
+        finally:
+            conn.close()
+
+    def migrate(self):
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            migrations = [
+                ('users', 'failed_attempts', 'INTEGER DEFAULT 0'),
+                ('users', 'locked_until', 'TEXT'),
+                ('audit_log', 'username', 'TEXT'),
+                ('audit_log', 'ip', 'TEXT'),
+            ]
+            for table, col, coldef in migrations:
+                try:
+                    cur.execute(f'ALTER TABLE {table} ADD COLUMN {col} {coldef}')
+                    conn.commit()
+                    print(f'migrated: {table}.{col}')
+                except:
+                    pass
+        finally:
+            conn.close()
+
 db = Database()
