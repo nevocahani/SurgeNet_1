@@ -8,6 +8,19 @@ database.DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sur
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(32))
+from datetime import timedelta
+app.permanent_session_lifetime = timedelta(hours=8)
+
+@app.before_request
+def check_session_timeout():
+    import time
+    if 'user_id' in session:
+        last = session.get('last_active', 0)
+        now = time.time()
+        if now - last > 8 * 3600:  # 8 hours inactive
+            session.clear()
+            return
+        session['last_active'] = now
 
 # ── helpers ──────────────────────────────────────────────────────
 def hash_password(pw):
@@ -34,16 +47,33 @@ def login():
     data = request.json
     username = data.get('username', '').strip()
     password  = data.get('password', '')
+    ip = request.remote_addr or ''
+
     user = db.get_user_by_username(username)
     if not user:
         return jsonify({'error': 'שם משתמש לא קיים'}), 401
+
+    # check if locked
+    locked, mins = db.is_locked(username)
+    if locked:
+        return jsonify({'error': f'החשבון נעול ל-{mins} דקות נוספות עקב ניסיונות כניסה כושלים'}), 423
+
     if user['first_login']:
         session['pending_user'] = username
         return jsonify({'first_login': True, 'name': user['name']})
+
     if user['password_hash'] != hash_password(password):
-        return jsonify({'error': 'סיסמה שגויה'}), 401
+        attempts = db.record_failed_login(username)
+        remaining = max(0, 5 - attempts)
+        db.log_action(user['id'], username, 'login_failed', f'ניסיון {attempts}/5', ip)
+        if attempts >= 5:
+            return jsonify({'error': 'החשבון נעול ל-15 דקות עקב 5 ניסיונות כושלים'}), 423
+        return jsonify({'error': f'סיסמה שגויה — נותרו {remaining} ניסיונות'}), 401
+
+    db.reset_failed_login(username)
     session['user_id'] = user['id']
     session['remembered'] = bool(data.get('remember_me', False))
+    db.log_action(user['id'], username, 'login', 'כניסה מוצלחת', ip)
     return jsonify({'ok': True, 'user': safe_user(user)})
 
 @app.route('/api/first-login', methods=['POST'])
@@ -65,6 +95,11 @@ def first_login():
 
 @app.route('/api/logout', methods=['POST'])
 def logout():
+    uid = session.get('user_id')
+    if uid:
+        user = db.get_user(uid)
+        if user:
+            db.log_action(uid, user['username'], 'logout', '', request.remote_addr or '')
     session.clear()
     return jsonify({'ok': True})
 
@@ -320,6 +355,12 @@ def _auto_match(req_id):
     db.match_request(req_id, best['id'], travel['mins'], travel['dist'])
 
 # ── hospitals list ───────────────────────────────────────────────
+@app.route('/api/audit-log')
+@login_required(roles=['admin'])
+def get_audit_log(current_user):
+    logs = db.get_audit_log(limit=200)
+    return jsonify(logs)
+
 @app.route('/api/hospitals')
 def hospitals():
     return jsonify([
@@ -337,6 +378,7 @@ def index():
 
 if __name__ == '__main__':
     db.init()
+    db.migrate()
     port = int(os.environ.get('PORT', 5000))
     host = '0.0.0.0' if os.environ.get('RAILWAY_ENVIRONMENT') else '127.0.0.1'
     debug = not os.environ.get('RAILWAY_ENVIRONMENT')
