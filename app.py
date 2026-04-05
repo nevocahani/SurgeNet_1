@@ -380,7 +380,8 @@ if __name__ == '__main__':
     db.init()
     db.migrate()
     port = int(os.environ.get('PORT', 5000))
-    host = '0.0.0.0' if os.environ.get('RAILWAY_ENVIRONMENT') else '127.0.0.1'
-    debug = not os.environ.get('RAILWAY_ENVIRONMENT')
-    print(f'\n✅ SurgeNet פועל על port {port}\n')
-    app.run(host=host, port=port, debug=debug)
+    is_production = bool(os.environ.get('DATABASE_URL'))
+    host = '0.0.0.0'
+    debug = not is_production
+    print(f'\n✅ SurgeNet פועל על port {port} בכתובת {host}\n')
+    app.run(host=host, port=port, debug=debug, use_reloader=False)
