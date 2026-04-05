@@ -430,19 +430,12 @@ class Database:
         conn = get_conn()
         try:
             cur = conn.cursor()
-            try:
-                cur.execute(f'SELECT * FROM audit_log ORDER BY id DESC LIMIT {limit}')
-                return fetchall(cur)
-            except Exception as e:
-                # fallback if columns missing
-                cur2 = conn.cursor()
-                cur2.execute(f'SELECT id, user_id, action, details FROM audit_log ORDER BY id DESC LIMIT {limit}')
-                rows = fetchall(cur2)
-                for r in rows:
-                    r.setdefault('username', '—')
-                    r.setdefault('ip', '—')
-                    r.setdefault('created_at', '')
-                return rows
+            cur.execute(f'SELECT * FROM audit_log ORDER BY id DESC LIMIT {limit}')
+            return fetchall(cur)
+        except:
+            try: conn.rollback()
+            except: pass
+            return []
         finally:
             conn.close()
 
@@ -450,20 +443,36 @@ class Database:
         conn = get_conn()
         try:
             cur = conn.cursor()
-            migrations = [
-                ('users', 'failed_attempts', 'INTEGER DEFAULT 0'),
-                ('users', 'locked_until', 'TEXT'),
-                ('audit_log', 'username', 'TEXT DEFAULT '''),
-                ('audit_log', 'ip', 'TEXT DEFAULT '''),
-                ('audit_log', 'created_at', 'TEXT DEFAULT '''),
-            ]
-            for table, col, coldef in migrations:
+            # Create audit_log table if missing
+            if is_pg():
+                cur.execute('''CREATE TABLE IF NOT EXISTS audit_log (
+                    id         SERIAL PRIMARY KEY,
+                    user_id    INTEGER,
+                    username   TEXT DEFAULT \'\',
+                    action     TEXT,
+                    details    TEXT DEFAULT \'\',
+                    ip         TEXT DEFAULT \'\',
+                    created_at TEXT DEFAULT \'\'
+                )''')
+            else:
+                cur.execute('''CREATE TABLE IF NOT EXISTS audit_log (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    INTEGER,
+                    username   TEXT DEFAULT \'\',
+                    action     TEXT,
+                    details    TEXT DEFAULT \'\',
+                    ip         TEXT DEFAULT \'\',
+                    created_at TEXT DEFAULT \'\'
+                )''')
+            conn.commit()
+            # Add missing columns to users
+            for col, coldef in [('failed_attempts', 'INTEGER DEFAULT 0'), ('locked_until', 'TEXT')]:
                 try:
-                    cur.execute(f'ALTER TABLE {table} ADD COLUMN {col} {coldef}')
+                    cur.execute(f'ALTER TABLE users ADD COLUMN {col} {coldef}')
                     conn.commit()
-                    print(f'migrated: {table}.{col}')
+                    print(f'migrated: users.{col}')
                 except:
-                    pass
+                    conn.rollback()
         finally:
             conn.close()
 
