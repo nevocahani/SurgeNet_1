@@ -15,12 +15,16 @@ app.permanent_session_lifetime = timedelta(hours=8)
 def check_session_timeout():
     import time
     if 'user_id' in session:
-        last = session.get('last_active', 0)
         now = time.time()
-        if now - last > 8 * 3600:  # 8 hours inactive
+        last = session.get('last_active')
+        if last is None:
+            # first request after login - set last_active
+            session['last_active'] = now
+        elif now - last > 8 * 3600:  # 8 hours inactive
             session.clear()
             return
-        session['last_active'] = now
+        else:
+            session['last_active'] = now
 
 # ── helpers ──────────────────────────────────────────────────────
 def hash_password(pw):
