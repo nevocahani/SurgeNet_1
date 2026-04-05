@@ -430,8 +430,19 @@ class Database:
         conn = get_conn()
         try:
             cur = conn.cursor()
-            cur.execute(f'SELECT * FROM audit_log ORDER BY id DESC LIMIT {limit}')
-            return fetchall(cur)
+            try:
+                cur.execute(f'SELECT * FROM audit_log ORDER BY id DESC LIMIT {limit}')
+                return fetchall(cur)
+            except Exception as e:
+                # fallback if columns missing
+                cur2 = conn.cursor()
+                cur2.execute(f'SELECT id, user_id, action, details FROM audit_log ORDER BY id DESC LIMIT {limit}')
+                rows = fetchall(cur2)
+                for r in rows:
+                    r.setdefault('username', '—')
+                    r.setdefault('ip', '—')
+                    r.setdefault('created_at', '')
+                return rows
         finally:
             conn.close()
 
@@ -442,8 +453,9 @@ class Database:
             migrations = [
                 ('users', 'failed_attempts', 'INTEGER DEFAULT 0'),
                 ('users', 'locked_until', 'TEXT'),
-                ('audit_log', 'username', 'TEXT'),
-                ('audit_log', 'ip', 'TEXT'),
+                ('audit_log', 'username', 'TEXT DEFAULT '''),
+                ('audit_log', 'ip', 'TEXT DEFAULT '''),
+                ('audit_log', 'created_at', 'TEXT DEFAULT '''),
             ]
             for table, col, coldef in migrations:
                 try:
