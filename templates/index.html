@@ -619,13 +619,14 @@ async function pgStaffReq(el) { await pgMyReq(el); }
 
 async function pgOpenReq(el) {
   await loadRequests();
-  var open = requests.filter(function(r){ return r.status==='searching'&&r.specialty===CU.specialty; });
+  var open = requests.filter(function(r){ return r.status==='searching'; });
   el.innerHTML = '<div class="page-header"><div class="page-title">בקשות פתוחות</div><div class="page-sub">'+CU.name+' · '+(CU.specialty||'')+
-    '</div><div style="margin-top:10px"><span class="'+(CU.can_travel?'t-yes':'t-no')+'">'+(CU.can_travel?'✓ '+CU.transport:'✗ לא זמין לנסיעה')+'</span></div></div>'+
-    '<div class="split"><div><div class="section-label">בקשות ממתינות</div><div id="open-list"></div></div>'+
-    '<div><div class="section-label">אישור / דחייה</div><div id="approval-zone"><div class="placeholder-box"><div class="placeholder-icon">👆</div><div>לחץ על בקשה</div></div></div></div></div>';
+    '</div><div style="margin-top:10px;display:flex;gap:10px;align-items:center"><span class="'+(CU.can_travel?'t-yes':'t-no')+'">'+(CU.can_travel?'✓ '+CU.transport:'✗ לא זמין לנסיעה')+'</span>'+
+    '<button class="btn-sm" onclick="resetAvail()">שנה זמינות</button></div></div>'+
+    '<div class="split"><div><div class="section-label">בקשות ממתינות ('+open.length+')</div><div id="open-list"></div></div>'+
+    '<div><div class="section-label">פרטי בקשה</div><div id="approval-zone"><div class="placeholder-box"><div class="placeholder-icon">👆</div><div>לחץ על בקשה לפרטים</div></div></div></div></div>';
   var list=document.getElementById('open-list');
-  if(!open.length){ list.innerHTML='<div class="empty" style="padding:30px"><div class="empty-icon">✅</div><div>אין בקשות ממתינות</div></div>'; return; }
+  if(!open.length){ list.innerHTML='<div class="empty" style="padding:30px"><div class="empty-icon">✅</div><div>אין בקשות פתוחות כרגע</div></div>'; return; }
   open.forEach(function(r){
     var card=buildReqCard(r,false,true);
     card.onclick=function(){ showApproval(r); };
