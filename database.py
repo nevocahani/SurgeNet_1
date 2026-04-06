@@ -443,6 +443,13 @@ class Database:
         conn = get_conn()
         try:
             cur = conn.cursor()
+            # Create push_subscriptions table
+            push_sql = "CREATE TABLE IF NOT EXISTS push_subscriptions (id {serial} PRIMARY KEY, user_id INTEGER NOT NULL, subscription TEXT NOT NULL, created_at TEXT)".format(serial="SERIAL" if is_pg() else "INTEGER AUTOINCREMENT")
+            try:
+                cur.execute(push_sql)
+                conn.commit()
+            except:
+                conn.rollback()
             # Create audit_log table if missing
             if is_pg():
                 cur.execute('''CREATE TABLE IF NOT EXISTS audit_log (
@@ -473,6 +480,75 @@ class Database:
                     print(f'migrated: users.{col}')
                 except:
                     conn.rollback()
+        finally:
+            conn.close()
+
+    def save_push_subscription(self, user_id, subscription):
+        import json as _json
+        from datetime import datetime
+        sub_str = _json.dumps(subscription)
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'DELETE FROM push_subscriptions WHERE user_id={ph()}', (user_id,))
+            if is_pg():
+                cur.execute(
+                    "INSERT INTO push_subscriptions (user_id, subscription, created_at) VALUES (%s,%s,%s)",
+                    (user_id, sub_str, datetime.utcnow().isoformat())
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO push_subscriptions (user_id, subscription, created_at) VALUES (?,?,?)",
+                    (user_id, sub_str, datetime.utcnow().isoformat())
+                )
+            conn.commit()
+        except:
+            try: conn.rollback()
+            except: pass
+        finally:
+            conn.close()
+
+    def delete_push_subscription(self, user_id):
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f'DELETE FROM push_subscriptions WHERE user_id={ph()}', (user_id,))
+            conn.commit()
+        except:
+            pass
+        finally:
+            conn.close()
+
+    def get_all_push_subscriptions(self):
+        import json as _json
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            try:
+                cur.execute("SELECT user_id, subscription FROM push_subscriptions")
+                rows = fetchall(cur)
+            except:
+                conn.rollback()
+                return []
+            result = []
+            for r in rows:
+                try:
+                    r["subscription"] = _json.loads(r["subscription"])
+                    result.append(r)
+                except:
+                    pass
+            return result
+        finally:
+            conn.close()
+
+    def get_all_available_surgeons(self):
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute(f"SELECT * FROM users WHERE role={ph()} AND available=1", ('surgeon',))
+            return [fix(r) for r in fetchall(cur)]
+        except:
+            return []
         finally:
             conn.close()
 
