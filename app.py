@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, session, render_template
+from flask import Flask, request, jsonify, session, render_template, send_from_directory
 from database import db
 from functools import wraps
 import hashlib, os, time, sys
@@ -257,6 +257,8 @@ def create_request(current_user):
     )
     # auto-match in background
     _auto_match(req['id'])
+    # send push notifications to available surgeons
+    _notify_surgeons(req)
     return jsonify({'ok': True, 'request': req}), 201
 
 @app.route('/api/requests/<int:rid>/accept', methods=['POST'])
@@ -346,6 +348,36 @@ def _hospital_coords(name):
     return coords.get(name)
 
 
+def _notify_surgeons(req):
+    try:
+        import json as _json
+        surgeons = db.get_all_available_surgeons()
+        subs = db.get_all_push_subscriptions()
+        if not subs:
+            return
+        payload = _json.dumps({
+            'title': f'🚨 בקשת חירום — {req["specialty"]}',
+            'body': f'{req["hospital"]} · {req["dept"]} · {req.get("urgency","קריטי")}',
+            'url': '/'
+        }, ensure_ascii=False)
+        vapid_key = os.environ.get('VAPID_PRIVATE_KEY')
+        vapid_claims = {'sub': f'mailto:{os.environ.get("MAIL_USER","surgenet@example.com")}'}
+        if not vapid_key:
+            return
+        from pywebpush import webpush, WebPushException
+        for sub_info in subs:
+            try:
+                webpush(
+                    subscription_info=sub_info['subscription'],
+                    data=payload,
+                    vapid_private_key=vapid_key,
+                    vapid_claims=vapid_claims
+                )
+            except Exception as e:
+                print(f'Push error: {e}')
+    except Exception as e:
+        print(f'Notify error: {e}')
+
 def _auto_match(req_id):
     req = db.get_request(req_id)
     if not req:
@@ -364,6 +396,33 @@ def _auto_match(req_id):
 def get_audit_log(current_user):
     logs = db.get_audit_log(limit=200)
     return jsonify(logs)
+
+@app.route('/manifest.json')
+def manifest():
+    return send_from_directory(BASE_DIR, 'manifest.json')
+
+@app.route('/sw.js')
+def service_worker():
+    response = send_from_directory(BASE_DIR, 'sw.js')
+    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+@app.route('/api/push/subscribe', methods=['POST'])
+@login_required()
+def push_subscribe(current_user):
+    data = request.json
+    sub = data.get('subscription')
+    if not sub:
+        return jsonify({'error': 'חסר subscription'}), 400
+    db.save_push_subscription(current_user['id'], sub)
+    return jsonify({'ok': True})
+
+@app.route('/api/push/unsubscribe', methods=['POST'])
+@login_required()
+def push_unsubscribe(current_user):
+    db.delete_push_subscription(current_user['id'])
+    return jsonify({'ok': True})
 
 @app.route('/api/hospitals')
 def hospitals():
