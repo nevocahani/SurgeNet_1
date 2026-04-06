@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SurgeNet</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="vapid-key" content="BE-nWWxSKQBTmjijlIPFeh0McDPy1IBeF8fYddWS3YOrd4rYDkHhArrHCK2zioY30w6hscqaw17QuFSLp_H29Iw">
+<meta name="theme-color" content="#D93A46">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SurgeNet">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -1137,6 +1143,63 @@ function buildReqCard(r, showPatient, selectable) {
   '</div><div class="req-side"><span class="badge '+badgeCls+'">'+badgeTxt+'</span>'+timerHtml+'</div>';
   return div;
 }
+
+// ── PWA & Push Notifications ─────────────────────────────────────
+function urlBase64ToUint8Array(b) {
+  var pad = '='.repeat((4 - b.length % 4) % 4);
+  var base64 = (b + pad).replace(/-/g,'+').replace(/_/g,'/');
+  var raw = atob(base64);
+  var arr = new Uint8Array(raw.length);
+  for(var i=0;i<raw.length;++i) arr[i]=raw.charCodeAt(i);
+  return arr;
+}
+
+async function registerPWA() {
+  if(!('serviceWorker' in navigator)) return;
+  try {
+    var reg = await navigator.serviceWorker.register('/sw.js');
+    if(CU && CU.role==='surgeon') await subscribeToPush(reg);
+  } catch(e) { console.log('SW error:',e); }
+}
+
+async function subscribeToPush(reg) {
+  try {
+    if(!('Notification' in window)) return;
+    var perm = await Notification.requestPermission();
+    if(perm !== 'granted') return;
+    var meta = document.querySelector('meta[name="vapid-key"]');
+    var key = meta ? meta.content : null;
+    if(!key || key==='VAPID_KEY_PLACEHOLDER') return;
+    var sub = await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:urlBase64ToUint8Array(key)});
+    await api('POST', '/push/subscribe', {subscription: sub.toJSON()});
+    console.log('Push subscribed');
+  } catch(e) { console.log('Push error:',e); }
+}
+
+var deferredPrompt = null;
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault(); deferredPrompt = e; showInstallBanner();
+});
+
+function showInstallBanner() {
+  if(document.getElementById('install-banner')) return;
+  var b = document.createElement('div');
+  b.id = 'install-banner';
+  b.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1A1B2E;color:white;padding:12px 20px;border-radius:12px;z-index:9999;display:flex;align-items:center;gap:12px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-family:Heebo,sans-serif;font-size:13px;white-space:nowrap';
+  b.innerHTML = '<span>📱 התקן את SurgeNet על הנייד</span><button onclick="installApp()" style="background:#D93A46;color:white;border:none;border-radius:7px;padding:6px 14px;font-family:Heebo,sans-serif;cursor:pointer">התקן</button><button onclick="this.parentElement.remove()" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:18px">✕</button>';
+  document.body.appendChild(b);
+}
+
+async function installApp() {
+  if(!deferredPrompt) return;
+  deferredPrompt.prompt();
+  await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  var b = document.getElementById('install-banner');
+  if(b) b.remove();
+}
+
+window.addEventListener('load', function(){ setTimeout(registerPWA, 2000); });
 
 // ── toast ──────────────────────────────────────────────────────────
 function showToast(msg, type) {
