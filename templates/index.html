@@ -251,12 +251,16 @@ tr:hover td { background:var(--s1); }
 
 @media(max-width:768px){
   .sidebar{display:none;}
+  .sidebar.mobile-open{display:block;position:fixed;top:58px;right:0;width:240px;height:calc(100vh - 58px);z-index:150;box-shadow:-4px 0 20px rgba(0,0,0,.15);}
   .main{margin-right:0;}
   .stats-row{grid-template-columns:1fr 1fr;}
   .split{grid-template-columns:1fr;}
   .form-grid{grid-template-columns:1fr;}
   .alert-grid{grid-template-columns:1fr;}
+  #menu-btn{display:block !important;}
+  .mobile-overlay{display:block !important;}
 }
+.mobile-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:140;}
 </style>
 </head>
 <body>
@@ -312,7 +316,10 @@ tr:hover td { background:var(--s1); }
 <!-- APP -->
 <div id="app">
   <div class="topbar">
-    <div class="topbar-logo">Surge<span>Net</span></div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <button id="menu-btn" onclick="toggleMobileMenu()" style="display:none;background:none;border:1.5px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:18px">☰</button>
+      <div class="topbar-logo">Surge<span>Net</span></div>
+    </div>
     <div class="topbar-right">
       <div class="live-dot"></div>
       <div class="user-chip">
@@ -453,6 +460,8 @@ function launchApp() {
   buildNav();
   // tick for elapsed timers
   tickInterval = setInterval(tick, 5000);
+  // ask for push permission after login
+  setTimeout(askPushPermission, 3000);
 }
 
 var NAV = {
@@ -1158,8 +1167,16 @@ async function registerPWA() {
   if(!('serviceWorker' in navigator)) return;
   try {
     var reg = await navigator.serviceWorker.register('/sw.js');
-    if(CU && CU.role==='surgeon') await subscribeToPush(reg);
+    console.log('SW registered OK');
+    // Store registration globally for use after login
+    window._swReg = reg;
   } catch(e) { console.log('SW error:',e); }
+}
+
+async function askPushPermission() {
+  if(!window._swReg) return;
+  if(!CU || CU.role !== 'surgeon') return;
+  await subscribeToPush(window._swReg);
 }
 
 async function subscribeToPush(reg) {
@@ -1200,6 +1217,44 @@ async function installApp() {
 }
 
 window.addEventListener('load', function(){ setTimeout(registerPWA, 2000); });
+
+// ── mobile menu ──────────────────────────────────────────────────
+function toggleMobileMenu() {
+  var sidebar = document.getElementById('sidebar');
+  var isOpen = sidebar.classList.contains('mobile-open');
+  if (isOpen) {
+    closeMobileMenu();
+  } else {
+    sidebar.classList.add('mobile-open');
+    var overlay = document.getElementById('mobile-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'mobile-overlay';
+      overlay.className = 'mobile-overlay';
+      overlay.onclick = closeMobileMenu;
+      document.body.appendChild(overlay);
+    }
+    overlay.style.display = 'block';
+  }
+}
+
+function closeMobileMenu() {
+  var sidebar = document.getElementById('sidebar');
+  sidebar.classList.remove('mobile-open');
+  var overlay = document.getElementById('mobile-overlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+// Close menu when nav item clicked on mobile
+function switchPage(id, tab) {
+  closeMobileMenu();
+  document.querySelectorAll('.nav-item').forEach(function(t){ t.classList.remove('active'); });
+  document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
+  tab.classList.add('active');
+  var pg = document.getElementById('page-'+id);
+  if (pg) { pg.classList.add('active'); renderPage(id); }
+  currentPage = id;
+}
 
 // ── toast ──────────────────────────────────────────────────────────
 function showToast(msg, type) {
