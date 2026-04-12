@@ -260,7 +260,7 @@ tr:hover td { background:var(--s1); }
   #menu-btn{display:block !important;}
   .mobile-overlay{display:block !important;}
 }
-.mobile-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:140;}
+.mobile-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:140;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -1221,8 +1221,7 @@ window.addEventListener('load', function(){ setTimeout(registerPWA, 2000); });
 // ── mobile menu ──────────────────────────────────────────────────
 function toggleMobileMenu() {
   var sidebar = document.getElementById('sidebar');
-  var isOpen = sidebar.classList.contains('mobile-open');
-  if (isOpen) {
+  if (sidebar.classList.contains('mobile-open')) {
     closeMobileMenu();
   } else {
     sidebar.classList.add('mobile-open');
@@ -1231,7 +1230,8 @@ function toggleMobileMenu() {
       overlay = document.createElement('div');
       overlay.id = 'mobile-overlay';
       overlay.className = 'mobile-overlay';
-      overlay.onclick = closeMobileMenu;
+      overlay.addEventListener('click', closeMobileMenu);
+      overlay.addEventListener('touchstart', closeMobileMenu);
       document.body.appendChild(overlay);
     }
     overlay.style.display = 'block';
