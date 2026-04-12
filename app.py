@@ -4,9 +4,12 @@ from functools import wraps
 import hashlib, os, time, sys
 
 import database
-database.DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'surgenet.db')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+database.DB_PATH = os.path.join(BASE_DIR, 'surgenet.db')
 
-app = Flask(__name__)
+app = Flask(__name__,
+    template_folder=os.path.join(BASE_DIR, 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static'))
 app.secret_key = os.environ.get('SECRET_KEY', os.urandom(32))
 from datetime import timedelta
 app.permanent_session_lifetime = timedelta(hours=8)
